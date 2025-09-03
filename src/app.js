@@ -11,13 +11,23 @@ const app = express();
 
 // --- Middlewares Globais ---
 
-// Habilita o CORS para permitir requisições de diferentes origens (essencial para o frontend)
-app.use(cors());
+// Configuração de CORS
+app.use(cors({
+  origin: "http://localhost:3000", // ou "*" se quiser liberar geral
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
 
-// Habilita o parsing de requisições com corpo no formato JSON
+// Responde manualmente preflight requests
+app.options("*", (req, res) => {
+  res.header("Access-Control-Allow-Origin", "http://localhost:3000"); // ou "*"
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.sendStatus(200);
+});
+
+// Habilita parsing JSON e URL-encoded
 app.use(express.json());
-
-// Habilita o parsing de requisições com corpo no formato x-www-form-urlencoded
 app.use(express.urlencoded({ extended: true }));
 
 
