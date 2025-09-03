@@ -12,21 +12,22 @@ const app = express();
 // --- Middlewares Globais ---
 
 // Configuração de CORS
+// Configuração global de CORS (liberando todas as rotas e origens)
 app.use(cors({
-  origin: "http://localhost:3000", // ou "*" se quiser liberar geral
+  origin: "*", // libera para qualquer origem
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// Responde manualmente preflight requests
+// Responde manualmente preflight requests (OPTIONS) para todas as rotas
 app.options("*", (req, res) => {
-  res.header("Access-Control-Allow-Origin", "http://localhost:3000"); // ou "*"
+  res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.sendStatus(200);
 });
 
-// Habilita parsing JSON e URL-encoded
+// Parsing de JSON e URL-encoded
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
