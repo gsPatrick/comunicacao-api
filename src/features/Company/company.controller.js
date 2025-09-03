@@ -60,11 +60,27 @@ const deleteCompany = async (req, res) => {
   }
 };
 
+// Adicione esta nova função
+const exportCompanies = async (req, res) => {
+  try {
+    const allCompanies = await companyService.findAllCompaniesForExport();
+    
+    // Define os headers para forçar o download do arquivo
+    res.setHeader('Content-disposition', 'attachment; filename=companies.json');
+    res.set('Content-Type', 'application/json');
+    
+    // Retorna os dados em formato JSON
+    return res.status(200).json(allCompanies);
+  } catch (error) {
+    return res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+};
+
 module.exports = {
   createCompany,
   getAllCompanies,
   getCompanyById,
   updateCompany,
   deleteCompany,
-  
+  exportCompanies
 };

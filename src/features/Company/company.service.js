@@ -83,10 +83,18 @@ const deleteCompany = async (id) => {
   return true;
 };
 
+const findAllCompaniesForExport = async () => {
+  const companies = await Company.findAll({
+    order: [['tradeName', 'ASC']],
+  });
+  return companies;
+};
+
 module.exports = {
   createCompany,
   findAllCompanies,
   findCompanyById,
   updateCompany,
   deleteCompany,
+  findAllCompaniesForExport
 };
