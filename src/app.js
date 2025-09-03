@@ -19,7 +19,6 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// Responde manualmente preflight requests (OPTIONS) para todas as rotas
 app.use((req, res, next) => {
   if (req.method === "OPTIONS") {
     res.header("Access-Control-Allow-Origin", "*");
@@ -29,6 +28,7 @@ app.use((req, res, next) => {
   }
   next();
 });
+
 
 
 // Parsing de JSON e URL-encoded
