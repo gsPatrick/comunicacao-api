@@ -3,7 +3,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const { sequelize } = require('./models');
+const { sequelize, User } = require('./models'); // Importando o modelo User
 const mainRouter = require('./routes');
 
 // Inicializa a aplicação Express
@@ -19,6 +19,31 @@ app.use(express.json());
 
 // Habilita o parsing de requisições com corpo no formato x-www-form-urlencoded
 app.use(express.urlencoded({ extended: true }));
+
+
+// --- Função para Criar Usuário Admin Padrão ---
+
+const createDefaultAdmin = async () => {
+  try {
+    const adminEmail = 'admin@admin.com';
+    const adminExists = await User.findOne({ where: { email: adminEmail } });
+
+    if (!adminExists) {
+      await User.create({
+        name: 'Administrador Padrão',
+        email: adminEmail,
+        password: 'Admin123', // O hook no model irá criptografar a senha
+        profile: 'ADMIN',
+        isActive: true,
+      });
+      console.log('Default admin user created successfully.');
+    } else {
+      console.log('Default admin user already exists.');
+    }
+  } catch (error) {
+    console.error('Error creating default admin user:', error);
+  }
+};
 
 
 // --- Rotas da Aplicação ---
@@ -40,19 +65,16 @@ app.use('/api', mainRouter);
 // --- Tratamento de Erros ---
 
 // Middleware para tratar rotas não encontradas (404)
-// Ele será acionado se nenhuma das rotas acima corresponder à requisição
 app.use((req, res, next) => {
     res.status(404).json({ error: 'Not Found', message: `The requested URL ${req.originalUrl} was not found on this server.` });
 });
 
 // Middleware global para tratamento de erros (Error Handler)
-// Captura qualquer erro não tratado que ocorra nos controllers ou serviços
 app.use((err, req, res, next) => {
     console.error('--- UNHANDLED ERROR ---');
     console.error(err.stack);
     console.error('-----------------------');
     
-    // Evita vazar detalhes sensíveis em produção
     const isProduction = process.env.NODE_ENV === 'production';
     res.status(500).json({ 
         error: 'Internal Server Error', 
@@ -63,22 +85,25 @@ app.use((err, req, res, next) => {
 
 // --- Inicialização do Servidor ---
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`Access health check at http://localhost:${PORT}`);
   
   try {
-    // Tenta autenticar a conexão com o banco de dados na inicialização
+    // Tenta autenticar a conexão com o banco de dados
     await sequelize.authenticate();
     console.log('Database connection has been established successfully.');
     
-    // Opcional: Sincronizar modelos (usar com cuidado em produção)
-     await sequelize.sync({ force: true }); // Use { force: true } para recriar as tabelas
-    // console.log("All models were synchronized successfully.");
+    // Sincroniza os modelos com o banco de dados, forçando a recriação das tabelas
+    await sequelize.sync({ force: true });
+    console.log("All models were synchronized successfully (force: true).");
+
+    // Após sincronizar, chama a função para criar o admin padrão
+    await createDefaultAdmin();
 
   } catch (error) {
-    console.error('Unable to connect to the database:', error);
+    console.error('Unable to connect to the database or sync models:', error);
   }
 });
