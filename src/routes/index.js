@@ -10,7 +10,7 @@ const requestRouter = require('../features/Request/request.routes');
 const associationRouter = require('../features/Association/association.routes');
 const dashboardRoutes = require('../features/Dashboard/dashboard.routes');
 const stepRouter = require('../features/Steps/steps.routes'); // <-- NOVO
-const workflowRouter = require('../features/Workflows/workflow.routes'); // <-- NOVO
+const workflowRouter = require('../features/Workflow/workflow.routes'); // <-- NOVO
 
 const router = express.Router();
 
