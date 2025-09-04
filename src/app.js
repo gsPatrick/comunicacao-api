@@ -4,52 +4,64 @@ const express = require('express');
 const cors = require('cors');
 const db = require('./models');
 const routes = require('./routes');
-const { User } = require('./models'); // Importar o modelo de usuário
+const { User, Workflow } = require('./models'); // Importar também o modelo Workflow
 const bcrypt = require('bcryptjs');
 
 const app = express();
 
-// --- CONFIGURAÇÃO DE CORS ABERTA ---
-// Esta configuração libera o acesso para qualquer origem (*).
-// É crucial que isso venha ANTES de qualquer definição de rota.
 app.use(cors());
-
-// Middlewares essenciais
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Rota principal da API
 app.use('/api', routes);
 
-// Rota de health check para verificar se a API está no ar
 app.get('/', (req, res) => {
   res.send('API SAGEPE está funcionando corretamente!');
 });
 
-// Função para criar o administrador padrão se ele não existir
+// Função para criar o administrador padrão
 const createDefaultAdmin = async () => {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@admin.com';
   const adminPassword = process.env.ADMIN_PASSWORD || 'Admin123';
-
   try {
     const [user, created] = await User.findOrCreate({
       where: { email: adminEmail },
       defaults: {
         name: 'Administrador Padrão',
         email: adminEmail,
-        password: adminPassword, // O hook do modelo fará o hash
+        password: adminPassword,
         profile: 'ADMIN',
         isActive: true
       }
     });
-
-    if (created) {
-      console.log('Usuário administrador padrão criado com sucesso.');
-    } else {
-      console.log('Usuário administrador padrão já existe.');
-    }
+    if (created) console.log('Usuário administrador padrão criado com sucesso.');
+    else console.log('Usuário administrador padrão já existe.');
   } catch (error) {
     console.error('Erro ao criar o usuário administrador padrão:', error);
+  }
+};
+
+// --- NOVA FUNÇÃO PARA CRIAR WORKFLOWS PADRÃO ---
+const createDefaultWorkflows = async () => {
+  const workflowsToCreate = [
+    { name: 'ADMISSAO', description: 'Processo para contratar novos colaboradores.' },
+    { name: 'DESLIGAMENTO', description: 'Processo para desligar colaboradores.' },
+    { name: 'SUBSTITUICAO', description: 'Processo para substituir um colaborador existente.' },
+  ];
+
+  try {
+    for (const wf of workflowsToCreate) {
+      const [workflow, created] = await Workflow.findOrCreate({
+        where: { name: wf.name },
+        defaults: { description: wf.description, isActive: true }
+      });
+      if (created) {
+        console.log(`Workflow padrão "${wf.name}" criado com sucesso.`);
+      } else {
+        console.log(`Workflow padrão "${wf.name}" já existe.`);
+      }
+    }
+  } catch (error) {
+    console.error('Erro ao criar workflows padrão:', error);
   }
 };
 
@@ -62,8 +74,9 @@ const startServer = async () => {
     await db.sequelize.sync({ force: true }); 
     console.log('Banco de dados sincronizado com sucesso (force: true).');
 
-    // Após sincronizar, garante que o admin padrão exista
+    // Garante que os dados essenciais existam
     await createDefaultAdmin();
+    await createDefaultWorkflows(); // <-- CHAMADA DA NOVA FUNÇÃO
 
     app.listen(PORT, () => {
       console.log(`Servidor rodando na porta ${PORT}`);
@@ -72,6 +85,5 @@ const startServer = async () => {
     console.error('Não foi possível conectar ao banco de dados:', error);
   }
 };
-
 
 startServer();
