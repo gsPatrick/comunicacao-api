@@ -16,12 +16,13 @@ router.post(
   authorizeMiddleware(['SOLICITANTE']),
   requestController.createAdmissionRequest
 );
+// A rota de desligamento/substituição agora requer que o cliente envie o nome do workflow ou seja inferido.
+// Para simplicidade, vamos manter a rota única e o controller fará a distinção.
 router.post(
-  '/resignation',
+  '/resignation', // ou `/resignation-substitution` ou até mesmo `/new` com `workflowName` no body
   authorizeMiddleware(['SOLICITANTE']),
   requestController.createResignationRequest
 );
-
 
 // =================================================================
 // ROTAS DE VISUALIZAÇÃO (Ação de Todos os Perfis)
@@ -39,43 +40,22 @@ router.get(
 
 
 // =================================================================
-// ROTAS DE AÇÕES POR PERFIL
+// ROTAS DE AÇÕES DE ATUALIZAÇÃO DE STATUS (GENÉRICA)
+// Esta rota agora lida com todas as transições de status com base na configuração do workflow e permissões.
+// Perfis permitidos inicialmente, mas a lógica de permissão é no service.
+// ADMIN e RH podem iniciar a mudança de status, mas o serviço validará se o perfil do usuário logado
+// tem permissão para a *próxima* etapa específica.
+// GESTAO também pode ser incluído se houver etapas onde eles iniciem uma mudança de status (ex: aprovação).
+// SOLICITANTE, em geral, não altera status diretamente (exceto cancelamento).
 // =================================================================
-
-// Ação da Gestão: Aprovar ou Reprovar uma solicitação inicial
 router.patch(
-  '/:id/analyze',
-  authorizeMiddleware(['GESTAO']),
-  requestController.analyzeRequest
-);
-
-// Ação do RH: Atualizar o status de uma solicitação durante o processo
-router.patch(
-  '/:id/rh-status',
-  authorizeMiddleware(['ADMIN', 'RH']),
-  requestController.updateStatusByRh
+  '/:id/status', // Nova rota genérica para atualização de status
+  authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), // Quaisquer perfis que podem iniciar uma mudança de status
+  requestController.updateRequestStatus
 );
 
 // =================================================================
-// ROTAS DE AÇÕES POR PERFIL
-// =================================================================
-
-// Ação da Gestão: Aprovar ou Reprovar uma solicitação inicial
-router.patch(
-  '/:id/analyze',
-  authorizeMiddleware(['GESTAO']),
-  requestController.analyzeRequest
-);
-
-// Ação do RH: Atualizar o status de uma solicitação durante o processo
-router.patch(
-  '/:id/rh-status',
-  authorizeMiddleware(['ADMIN', 'RH']),
-  requestController.updateStatusByRh
-);
-
-// =================================================================
-// ROTAS DO FLUXO DE CANCELAMENTO
+// ROTAS DO FLUXO DE CANCELAMENTO (adaptadas para o novo serviço)
 // =================================================================
 
 // Ação do Solicitante: Pedir o cancelamento de uma solicitação
@@ -92,10 +72,12 @@ router.post(
     requestController.resolveCancellation
 );
 
-
-// TODO: Implementar rotas para o fluxo de cancelamento/desistência, se necessário.
-// Ex: POST /:id/request-cancellation (Solicitante)
-// Ex: POST /:id/resolve-cancellation (Gestão)
+// Rota de exportação (mantida, com adaptação no controller)
+router.get(
+  '/export',
+  authorizeMiddleware(['ADMIN', 'RH', 'GESTAO', 'SOLICITANTE']),
+  requestController.exportRequests
+);
 
 
 module.exports = router;

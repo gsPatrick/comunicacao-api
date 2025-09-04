@@ -18,6 +18,8 @@ module.exports = (sequelize, DataTypes) => {
       this.belongsTo(models.Employee, { foreignKey: 'employeeId', as: 'employee' });
       // Uma solicitação tem um histórico de mudanças de status
       this.hasMany(models.RequestStatusLog, { foreignKey: 'requestId', as: 'statusHistory' });
+      // Uma solicitação está vinculada a um Workflow
+      this.belongsTo(models.Workflow, { foreignKey: 'workflowId', as: 'workflow' });
     }
   }
   Request.init({
@@ -29,17 +31,15 @@ module.exports = (sequelize, DataTypes) => {
     protocol: {
       type: DataTypes.STRING,
       unique: true,
-      // Pode ser gerado automaticamente via hooks ou no service
+      allowNull: false, // Protocol should always be set
     },
-    type: {
-      type: DataTypes.ENUM('ADMISSAO', 'DESLIGAMENTO', 'SUBSTITUICAO'),
-      allowNull: false,
-    },
+    // O campo 'type' foi removido conforme a especificação.
+    // O tipo de solicitação será determinado pelo 'workflowId'.
     status: {
       type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: 'PENDENTE',
-      // Ex: PENDENTE, EM_ANALISE, APROVADA, REPROVADA, EM_ENTREVISTA, ...
+      defaultValue: 'PENDENTE', // Este valor será sobrescrito pelo nome da primeira etapa do workflow
+      // Seus valores agora virão do 'name' das Steps
     },
     // Dados do candidato para admissão
     candidateName: DataTypes.STRING,

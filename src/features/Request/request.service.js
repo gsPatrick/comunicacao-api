@@ -8,6 +8,9 @@ const {
   Position,
   Employee,
   UserCompany,
+  Workflow, // NOVO
+  Step,     // NOVO
+  WorkflowStep, // NOVO
   sequelize
 } = require('../../models');
 const { Op } = require('sequelize');
@@ -34,54 +37,85 @@ const generateProtocol = async () => {
 };
 
 /**
- * Cria uma nova solicitação de ADMISSÃO.
+ * Cria uma nova solicitação com base em um workflow.
+ * @param {string} workflowName - O nome do workflow (ex: "ADMISSAO", "DESLIGAMENTO").
  * @param {object} requestData - Dados da solicitação.
  * @param {string} solicitantId - ID do usuário solicitante.
  * @returns {Promise<Request>} A solicitação criada.
  */
-const createAdmissionRequest = async (requestData, solicitantId) => {
-  const { companyId, contractId, workLocationId, positionId, candidateName, candidateCpf, candidatePhone, reason } = requestData;
+const createRequest = async (workflowName, requestData, solicitantId) => {
+  const { companyId, contractId, workLocationId, positionId, employeeId, candidateName, candidateCpf, candidatePhone, reason } = requestData;
+
+  const workflow = await Workflow.findOne({ where: { name: workflowName, isActive: true } });
+  if (!workflow) {
+    throw new Error(`Invalid Data: Workflow "${workflowName}" not found or inactive.`);
+  }
 
   const userPermission = await UserCompany.findOne({ where: { userId: solicitantId, companyId } });
-  if (!userPermission) throw new Error('Permission Denied: User cannot create requests for this company.');
+  if (!userPermission) {
+    throw new Error('Permission Denied: User cannot create requests for this company.');
+  }
 
-  const [company, contract, workLocation, position] = await Promise.all([
+  // Validações básicas de existência para entidades relacionadas
+  const [company, contract] = await Promise.all([
     Company.findByPk(companyId),
-    Contract.findOne({ where: { id: contractId, companyId } }),
-    WorkLocation.findOne({ where: { id: workLocationId, contractId } }),
-    Position.findByPk(positionId)
+    Contract.findOne({ where: { id: contractId, companyId } })
   ]);
+  if (!company || !contract) throw new Error('Invalid Data: Company or Contract not found or mismatched.');
 
-  if (!company || !contract || !workLocation || !position) throw new Error('Invalid Data: Company, Contract, Work Location, or Position not found or mismatched.');
-  
+  let workLocation, position, employee;
+  if (workLocationId) {
+    workLocation = await WorkLocation.findOne({ where: { id: workLocationId, contractId } });
+    if (!workLocation) throw new Error('Invalid Data: Work Location not found or mismatched.');
+  }
+  if (positionId) {
+    position = await Position.findByPk(positionId);
+    if (!position) throw new Error('Invalid Data: Position not found.');
+  }
+  if (employeeId) {
+    employee = await Employee.findByPk(employeeId, {
+      where: { contractId, workLocationId }
+    });
+    if (!employee) throw new Error('Invalid Data: Employee not found or does not belong to the specified contract/location.');
+  }
+
+
+  // Buscar a primeira etapa do workflow
+  const initialWorkflowStep = await WorkflowStep.findOne({
+    where: { workflowId: workflow.id, order: 1 },
+    include: [{ model: Step, as: 'step' }]
+  });
+
+  if (!initialWorkflowStep || !initialWorkflowStep.step) {
+    throw new Error('Workflow not properly configured: No initial step found.');
+  }
+
+  const initialStatus = initialWorkflowStep.step.name;
+
   const transaction = await sequelize.transaction();
   try {
     const protocol = await generateProtocol();
-    const initialStatus = 'ENVIADO_PARA_GESTAO';
 
     const newRequest = await Request.create({
-      protocol, type: 'ADMISSAO', status: initialStatus,
-      companyId, contractId, workLocationId, positionId,
+      protocol,
+      workflowId: workflow.id, // VINCULAR A UM WORKFLOW
+      status: initialStatus,
+      companyId, contractId, workLocationId, positionId, employeeId,
       candidateName, candidateCpf, candidatePhone, reason, solicitantId
     }, { transaction });
 
     await RequestStatusLog.create({
-      requestId: newRequest.id, status: initialStatus, responsibleId: solicitantId,
-      notes: 'Solicitação criada pelo cliente.'
+      requestId: newRequest.id,
+      status: initialStatus,
+      responsibleId: solicitantId,
+      notes: `Solicitação de ${workflow.name.toLowerCase()} criada pelo cliente.`
     }, { transaction });
 
     await transaction.commit();
-    // Notificações para Gestores
-    const managers = await User.findAll({
-      where: { profile: 'GESTAO', isActive: true },
-      include: [{ model: Company, as: 'companies', where: { id: companyId }, attributes: [] }]
-    });
-    for (const manager of managers) {
-      await notificationService.sendNotification({
-        recipient: manager.email, subject: `Nova Solicitação de Admissão: ${protocol}`,
-        message: `Uma nova solicitação de admissão para o cargo de ${position.name} foi criada por ${company.tradeName} e aguarda sua análise.`
-      });
-    }
+
+    // Notificação para o perfil responsável pela próxima etapa (se houver) ou Gestores
+    await sendNotificationForNextStep(newRequest, initialWorkflowStep.step, solicitantId);
+
     return newRequest;
   } catch (error) {
     await transaction.rollback();
@@ -90,56 +124,71 @@ const createAdmissionRequest = async (requestData, solicitantId) => {
 };
 
 /**
- * Cria uma nova solicitação de DESLIGAMENTO ou SUBSTITUIÇÃO.
- * @param {object} requestData - Dados da solicitação, incluindo employeeId.
- * @param {string} solicitantId - ID do usuário solicitante.
- * @returns {Promise<Request>} A solicitação criada.
+ * Função auxiliar para enviar notificações após a criação/atualização de uma solicitação.
+ * @param {Request} request - O objeto da solicitação.
+ * @param {Step} currentStep - O objeto da Step que define o status atual.
+ * @param {string} responsibleId - ID do usuário que realizou a ação.
+ * @param {string} customMessage - Mensagem customizada para notificação.
  */
-const createResignationRequest = async (requestData, solicitantId) => {
-  const { companyId, contractId, workLocationId, employeeId, type, reason } = requestData;
-  if (!['DESLIGAMENTO', 'SUBSTITUICAO'].includes(type)) throw new Error('Invalid request type.');
-
-  const userPermission = await UserCompany.findOne({ where: { userId: solicitantId, companyId } });
-  if (!userPermission) throw new Error('Permission Denied: User cannot create requests for this company.');
-
-  const employee = await Employee.findByPk(employeeId, {
-    where: { contractId, workLocationId } // Validação de consistência
-  });
-  if (!employee) throw new Error('Invalid Data: Employee not found or does not belong to the specified contract/location.');
-
-  const transaction = await sequelize.transaction();
-  try {
-    const protocol = await generateProtocol();
-    const initialStatus = 'ENVIADO_PARA_GESTAO';
-    
-    const newRequest = await Request.create({
-      protocol, type, status: initialStatus,
-      companyId, contractId, workLocationId, employeeId, reason, solicitantId
-    }, { transaction });
-
-    await RequestStatusLog.create({
-      requestId: newRequest.id, status: initialStatus, responsibleId: solicitantId,
-      notes: `Solicitação de ${type.toLowerCase()} criada pelo cliente.`
-    }, { transaction });
-
-    await transaction.commit();
-    // Notificações para Gestores
-    const company = await Company.findByPk(companyId);
-    const managers = await User.findAll({
-      where: { profile: 'GESTAO', isActive: true },
-      include: [{ model: Company, as: 'companies', where: { id: companyId }, attributes: [] }]
+const sendNotificationForNextStep = async (request, currentStep, responsibleId, customMessage = null) => {
+    const workflowSteps = await WorkflowStep.findAll({
+        where: { workflowId: request.workflowId },
+        order: [['order', 'ASC']],
+        include: [{ model: Step, as: 'step' }]
     });
-    for (const manager of managers) {
-        await notificationService.sendNotification({
-            recipient: manager.email, subject: `Nova Solicitação de ${type}: ${protocol}`,
-            message: `Uma nova solicitação para o colaborador ${employee.name} foi criada por ${company.tradeName} e aguarda sua análise.`
-        });
+
+    const currentWorkflowStep = workflowSteps.find(ws => ws.step.name === currentStep.name);
+
+    let nextRecipientProfile = null;
+    let notificationSubject = `Solicitação ${request.protocol} - Status: ${currentStep.name}`;
+    let notificationMessage = customMessage || `O status da solicitação ${request.protocol} foi atualizado para "${currentStep.name}".`;
+
+    if (currentWorkflowStep && Array.isArray(currentWorkflowStep.allowedNextStepIds) && currentWorkflowStep.allowedNextStepIds.length > 0) {
+        // Encontrar a próxima etapa na ordem, ou a primeira permitida
+        let nextStepInfo = null;
+        for (const allowedNextStepId of currentWorkflowStep.allowedNextStepIds) {
+            nextStepInfo = workflowSteps.find(ws => ws.stepId === allowedNextStepId);
+            if (nextStepInfo) break; // Pega a primeira etapa permitida
+        }
+
+        if (nextStepInfo) {
+            nextRecipientProfile = nextStepInfo.profileOverride || nextStepInfo.step.defaultProfile;
+            notificationSubject = `Ação Necessária: Solicitação ${request.protocol}`;
+            notificationMessage = `A solicitação ${request.protocol} aguarda a ação do perfil de ${nextRecipientProfile} na etapa "${nextStepInfo.step.name}".`;
+        }
+    } else {
+        // Se não houver próximas etapas definidas (fim do fluxo ou transição aberta), notifica o solicitante
+        const solicitant = await User.findByPk(request.solicitantId);
+        if (solicitant) {
+             await notificationService.sendNotification({
+                recipient: solicitant.email,
+                subject: `Sua solicitação ${request.protocol} foi atualizada`,
+                message: `O status da sua solicitação ${request.protocol} foi atualizado para "${currentStep.name}".`
+            });
+        }
+        return; // Nenhuma outra notificação para perfil específico
     }
-    return newRequest;
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
+
+    if (nextRecipientProfile) {
+        const recipients = await User.findAll({
+            where: { profile: nextRecipientProfile, isActive: true },
+            // Filtrar por companyId se o perfil for GESTAO ou SOLICITANTE e tiverem vínculo de empresa
+            include: nextRecipientProfile === 'GESTAO' || nextRecipientProfile === 'SOLICITANTE' ? [{
+                model: Company,
+                as: 'companies',
+                where: { id: request.companyId },
+                attributes: []
+            }] : []
+        });
+
+        for (const recipientUser of recipients) {
+            await notificationService.sendNotification({
+                recipient: recipientUser.email,
+                subject: notificationSubject,
+                message: notificationMessage
+            });
+        }
+    }
 };
 
 /**
@@ -149,7 +198,7 @@ const createResignationRequest = async (requestData, solicitantId) => {
  * @returns {Promise<object>} Lista de solicitações e metadados de paginação.
  */
 const findAllRequests = async (filters, userInfo) => {
-  const { status, type, companyId, protocol, page = 1, limit = 10 } = filters;
+  const { status, workflowName, companyId, protocol, page = 1, limit = 10 } = filters; // Alterado 'type' para 'workflowName'
   const { id: userId, profile } = userInfo;
   const where = {};
 
@@ -162,18 +211,26 @@ const findAllRequests = async (filters, userInfo) => {
   }
 
   if (status) where.status = status;
-  if (type) where.type = type;
   if (protocol) where.protocol = { [Op.iLike]: `%${protocol}%` };
   if (companyId) where.companyId = companyId;
 
+  let workflowWhere = {};
+  if (workflowName) {
+    workflowWhere.name = { [Op.iLike]: `%${workflowName}%` };
+  }
+
   const offset = (page - 1) * limit;
   const { count, rows } = await Request.findAndCountAll({
-    where, limit, offset, order: [['createdAt', 'DESC']],
+    where,
+    limit,
+    offset,
+    order: [['createdAt', 'DESC']],
     include: [
       { model: Company, as: 'company', attributes: ['id', 'tradeName'] },
       { model: User, as: 'solicitant', attributes: ['id', 'name'] },
       { model: Position, as: 'position', attributes: ['id', 'name'] },
       { model: Employee, as: 'employee', attributes: ['id', 'name'] },
+      { model: Workflow, as: 'workflow', attributes: ['id', 'name'], where: workflowWhere, required: !!workflowName }, // NOVO
     ]
   });
   return { total: count, requests: rows, page, limit };
@@ -192,7 +249,8 @@ const findRequestById = async (requestId, userInfo) => {
       { model: WorkLocation, as: 'workLocation' }, { model: Position, as: 'position' },
       { model: Employee, as: 'employee' },
       { model: User, as: 'solicitant', attributes: { exclude: ['password'] } },
-      { model: RequestStatusLog, as: 'statusHistory', include: [{ model: User, as: 'responsible', attributes: ['id', 'name', 'profile'] }], order: [['createdAt', 'ASC']] }
+      { model: RequestStatusLog, as: 'statusHistory', include: [{ model: User, as: 'responsible', attributes: ['id', 'name', 'profile'] }], order: [['createdAt', 'ASC']] },
+      { model: Workflow, as: 'workflow', attributes: ['id', 'name'] }, // NOVO
     ]
   });
 
@@ -208,46 +266,97 @@ const findRequestById = async (requestId, userInfo) => {
 };
 
 /**
- * Analisa uma solicitação (Aprovação/Reprovação pela GESTÃO).
+ * Atualiza o status de uma solicitação, validando transições e permissões dinamicamente.
+ * Esta função substitui analyzeRequestByManager e updateRequestStatusByRh.
  * @param {string} requestId - ID da solicitação.
- * @param {object} analysisData - Dados da análise ({ approved, notes }).
- * @param {string} managerId - ID do gestor.
+ * @param {string} newStepName - O nome da nova etapa (status).
+ * @param {string} responsibleId - ID do usuário responsável pela atualização.
+ * @param {string} notes - Observações sobre a atualização.
  * @returns {Promise<Request>} A solicitação atualizada.
  */
-const analyzeRequestByManager = async (requestId, analysisData, managerId) => {
-  const { approved, notes } = analysisData;
-  const request = await Request.findByPk(requestId, { include: ['solicitant'] });
+const updateRequestStatus = async (requestId, newStepName, responsibleId, notes = null) => {
+  const request = await Request.findByPk(requestId, {
+    include: [
+      { model: Workflow, as: 'workflow' },
+      {
+        model: RequestStatusLog,
+        as: 'statusHistory',
+        order: [['createdAt', 'DESC']],
+        limit: 1 // Para pegar o status atual
+      }
+    ]
+  });
 
   if (!request) throw new Error('Request not found.');
-  if (request.status !== 'ENVIADO_PARA_GESTAO') throw new Error(`Cannot analyze request with status "${request.status}".`);
+  if (!request.workflow) throw new Error('Request is not associated with a workflow.');
 
-  const userPermission = await UserCompany.findOne({ where: { userId: managerId, companyId: request.companyId } });
-  if (!userPermission) throw new Error('Permission Denied: Manager cannot analyze requests for this company.');
+  const currentStatusName = request.status;
 
-  const newStatus = approved ? 'APROVADO_PELA_GESTAO' : 'REPROVADO_PELA_GESTAO';
-  const logNotes = approved ? `Aprovado pela Gestão. Observações: ${notes || 'Nenhuma.'}` : `Reprovado pela Gestão. Motivo: ${notes || 'Não informado.'}`;
-  
+  // 1. Encontrar a Step atual e a Step alvo
+  const currentStep = await Step.findOne({ where: { name: currentStatusName } });
+  const newStep = await Step.findOne({ where: { name: newStepName } });
+
+  if (!currentStep) throw new Error(`Current status step "${currentStatusName}" not found in system configuration.`);
+  if (!newStep) throw new Error(`Target step "${newStepName}" not found in system configuration.`);
+
+  // 2. Obter a configuração do WorkflowStep para a etapa atual
+  const currentWorkflowStepConfig = await WorkflowStep.findOne({
+    where: { workflowId: request.workflowId, stepId: currentStep.id },
+    include: [{ model: Step, as: 'step' }]
+  });
+
+  if (!currentWorkflowStepConfig) throw new Error(`Workflow configuration for current step "${currentStatusName}" not found.`);
+
+  // 3. Validação de Transição
+  // Se allowedNextStepIds for null ou vazio, qualquer transição é permitida.
+  const allowedNextSteps = currentWorkflowStepConfig.allowedNextStepIds;
+  if (allowedNextSteps && Array.isArray(allowedNextSteps) && allowedNextSteps.length > 0 && !allowedNextSteps.includes(newStep.id)) {
+    throw new Error(`Invalid status transition from "${currentStatusName}" to "${newStepName}".`);
+  }
+
+  // 4. Validação de Permissão (Autorização)
+  const responsibleUser = await User.findByPk(responsibleId);
+  if (!responsibleUser) throw new Error('Responsible user not found.');
+
+  const targetStepConfig = await WorkflowStep.findOne({
+    where: { workflowId: request.workflowId, stepId: newStep.id },
+    include: [{ model: Step, as: 'step' }]
+  });
+  if (!targetStepConfig) throw new Error(`Workflow configuration for target step "${newStepName}" not found.`);
+
+  const requiredProfile = targetStepConfig.profileOverride || targetStepConfig.step.defaultProfile;
+
+  // ADMIN pode fazer tudo
+  if (responsibleUser.profile !== 'ADMIN' && responsibleUser.profile !== requiredProfile) {
+    throw new Error(`Permission Denied: User profile "${responsibleUser.profile}" cannot update to step "${newStepName}". Required profile: "${requiredProfile}".`);
+  }
+  // Se o perfil for GESTAO ou SOLICITANTE, verificar vínculo com a empresa
+  if ((responsibleUser.profile === 'GESTAO' || responsibleUser.profile === 'SOLICITANTE') && responsibleUser.profile === requiredProfile) {
+      const userCompanyLink = await UserCompany.findOne({ where: { userId: responsibleId, companyId: request.companyId } });
+      if (!userCompanyLink) {
+          throw new Error(`Permission Denied: User "${responsibleUser.name}" is not linked to company "${request.companyId}".`);
+      }
+  }
+
   const transaction = await sequelize.transaction();
   try {
-    request.status = newStatus;
+    request.status = newStepName;
     await request.save({ transaction });
-    await RequestStatusLog.create({ requestId, status: newStatus, responsibleId: managerId, notes: logNotes }, { transaction });
+
+    await RequestStatusLog.create({
+      requestId: request.id,
+      status: newStepName,
+      responsibleId: responsibleId,
+      notes: notes || `Status alterado para "${newStepName}".`
+    }, { transaction });
+
     await transaction.commit();
 
-    await notificationService.sendNotification({
-        recipient: request.solicitant.email, subject: `Sua solicitação ${request.protocol} foi atualizada`,
-        message: `Sua solicitação foi ${approved ? 'APROVADA' : 'REPROVADA'} pela gestão. Detalhes: ${logNotes}`
-    });
-    if (approved) {
-        const rhUsers = await User.findAll({ where: { profile: 'RH', isActive: true } });
-        for (const rhUser of rhUsers) {
-            await notificationService.sendNotification({
-                recipient: rhUser.email, subject: `Solicitação Aprovada: ${request.protocol}`,
-                message: `A solicitação ${request.protocol} foi aprovada e aguarda o início do processo seletivo.`
-            });
-        }
-    }
-    return request;
+    // Enviar notificação para o próximo responsável ou solicitante
+    await sendNotificationForNextStep(request, newStep, responsibleId, notes);
+
+    // Recarregar a request para incluir os dados atualizados para a resposta
+    return await findRequestById(request.id, { id: responsibleId, profile: responsibleUser.profile });
   } catch (error) {
     await transaction.rollback();
     throw error;
@@ -255,53 +364,8 @@ const analyzeRequestByManager = async (requestId, analysisData, managerId) => {
 };
 
 /**
- * Atualiza o status de uma solicitação (Ações do RH).
- * @param {string} requestId - ID da solicitação.
- * @param {object} statusData - Dados do novo status ({ status, notes }).
- * @param {string} rhUserId - ID do usuário de RH.
- * @returns {Promise<Request>} A solicitação atualizada.
- */
-const updateRequestStatusByRh = async (requestId, statusData, rhUserId) => {
-    const { status: newStatus, notes } = statusData;
-    const request = await Request.findByPk(requestId, { include: ['solicitant'] });
-    if (!request) throw new Error('Request not found.');
-
-    // Mapeamento de transições de status válidas para o RH
-    const validTransitions = {
-        'APROVADO_PELA_GESTAO': ['INICIADO_PROCESSO_SELETIVO', 'ENTREVISTA_REALIZADA', 'PROVA_APLICADA', 'EXAME_MEDICO_SOLICITADO', 'COLETA_DOCUMENTACAO', 'NAO_COMPARECEU', 'ADMITIDO'],
-        'INICIADO_PROCESSO_SELETIVO': ['ENTREVISTA_REALIZADA', 'PROVA_APLICADA', 'EXAME_MEDICO_SOLICITADO', 'COLETA_DOCUMENTACAO', 'NAO_COMPARECEU'],
-        'ENTREVISTA_REALIZADA': ['PROVA_APLICADA', 'EXAME_MEDICO_SOLICITADO', 'COLETA_DOCUMENTACAO', 'NAO_COMPARECEU'],
-        // ... e assim por diante para todas as etapas do fluxo de admissão e desligamento
-    };
-
-    if (!validTransitions[request.status] || !validTransitions[request.status].includes(newStatus)) {
-        throw new Error(`Invalid status transition from "${request.status}" to "${newStatus}".`);
-    }
-
-    const transaction = await sequelize.transaction();
-    try {
-        request.status = newStatus;
-        await request.save({ transaction });
-        await RequestStatusLog.create({
-            requestId, status: newStatus, responsibleId: rhUserId,
-            notes: `Status alterado pelo RH. Observações: ${notes || 'Nenhuma.'}`
-        }, { transaction });
-        await transaction.commit();
-
-        await notificationService.sendNotification({
-            recipient: request.solicitant.email, subject: `Sua solicitação ${request.protocol} foi atualizada`,
-            message: `O status da sua solicitação foi atualizado para: ${newStatus}.`
-        });
-        
-        return request;
-    } catch (error) {
-        await transaction.rollback();
-        throw error;
-    }
-};
-
-/**
  * Solicita o cancelamento de uma requisição (Ação do SOLICITANTE).
+ * Adaptado para o novo modelo de workflows.
  * @param {string} requestId - O ID da solicitação a ser cancelada.
  * @param {string} solicitantId - O ID do usuário que está solicitando o cancelamento.
  * @param {string} reason - O motivo do cancelamento.
@@ -315,55 +379,45 @@ const requestCancellation = async (requestId, solicitantId, reason) => {
         throw new Error('Request not found.');
     }
 
-    // Validação: Garante que o usuário que está cancelando é o mesmo que criou.
     if (request.solicitantId !== solicitantId) {
         throw new Error('Permission Denied: You can only cancel your own requests.');
     }
     
-    // Regra de Negócio: Não se pode cancelar solicitações já finalizadas.
-    const finalStatuses = ['ADMITIDO', 'REPROVADO_PELA_GESTAO', 'CANCELADO', 'NAO_COMPARECEU', 'DESLIGAMENTO_CONCLUIDO'];
+    // Supondo que 'CANCELADO' é uma etapa final e que 'CANCELAMENTO_SOLICITADO' é uma etapa intermediária.
+    // Precisa existir essas Steps no sistema.
+    const finalStatuses = ['CANCELADO', 'ADMITIDO', 'DESLIGAMENTO_CONCLUIDO', 'NAO_COMPARECEU', 'REPROVADO_PELA_GESTAO'];
     if (finalStatuses.includes(request.status)) {
         throw new Error(`Cannot cancel a request with final status "${request.status}".`);
     }
 
-    const newStatus = 'CANCELAMENTO_SOLICITADO';
-    const transaction = await sequelize.transaction();
-    try {
-        request.status = newStatus;
-        await request.save({ transaction });
-
-        await RequestStatusLog.create({
-            requestId,
-            status: newStatus,
-            responsibleId: solicitantId,
-            notes: `Solicitante pediu o cancelamento. Motivo: ${reason || 'Não informado.'}`
-        }, { transaction });
-
-        await transaction.commit();
-        
-        // Notificar os gestores responsáveis
-        const company = await Company.findByPk(request.companyId);
-        const managers = await User.findAll({
-            where: { profile: 'GESTAO', isActive: true },
-            include: [{ model: Company, as: 'companies', where: { id: request.companyId }, attributes: [] }]
-        });
-        for (const manager of managers) {
-            await notificationService.sendNotification({
-                recipient: manager.email,
-                subject: `Pedido de Cancelamento: Solicitação ${request.protocol}`,
-                message: `O cliente ${company.tradeName} solicitou o cancelamento da requisição ${request.protocol}. Sua aprovação é necessária.`
-            });
-        }
-
-        return request;
-    } catch (error) {
-        await transaction.rollback();
-        throw error;
+    const newCancellationStep = await Step.findOne({ where: { name: 'CANCELAMENTO_SOLICITADO' } });
+    if (!newCancellationStep) {
+      throw new Error('Cancellation workflow step "CANCELAMENTO_SOLICITADO" not found. Please configure it.');
     }
+
+    // Usar a função genérica para atualizar o status
+    const updatedRequest = await updateRequestStatus(request.id, newCancellationStep.name, solicitantId, `Solicitante pediu o cancelamento. Motivo: ${reason || 'Não informado.'}`);
+
+    // Notificar gestores responsáveis pela empresa sobre o pedido de cancelamento.
+    const company = await Company.findByPk(request.companyId);
+    const managers = await User.findAll({
+        where: { profile: 'GESTAO', isActive: true },
+        include: [{ model: Company, as: 'companies', where: { id: request.companyId }, attributes: [] }]
+    });
+    for (const manager of managers) {
+        await notificationService.sendNotification({
+            recipient: manager.email,
+            subject: `Pedido de Cancelamento: Solicitação ${request.protocol}`,
+            message: `O cliente ${company.tradeName} solicitou o cancelamento da requisição ${request.protocol}. Sua aprovação é necessária.`
+        });
+    }
+
+    return updatedRequest;
 };
 
 /**
  * Resolve um pedido de cancelamento (Ação da GESTÃO).
+ * Adaptado para o novo modelo de workflows.
  * @param {string} requestId - O ID da solicitação.
  * @param {string} managerId - O ID do gestor que está resolvendo.
  * @param {boolean} approved - Se o cancelamento foi aprovado.
@@ -386,49 +440,38 @@ const resolveCancellation = async (requestId, managerId, approved, notes) => {
         throw new Error('Permission Denied: You cannot manage requests for this company.');
     }
 
-    // Se aprovado, o status final é CANCELADO. Se negado, ele volta ao status anterior.
-    const previousStatusLog = await RequestStatusLog.findOne({
-        where: { requestId },
-        order: [['createdAt', 'DESC']],
-        offset: 1 // Pega o penúltimo status
-    });
-    
-    if (!previousStatusLog) {
-        // Fallback caso algo dê errado e não ache o log anterior
-        throw new Error('Could not determine the previous status of the request.');
-    }
-    
-    const newStatus = approved ? 'CANCELADO' : previousStatusLog.status;
-    const logNotes = approved 
-        ? `Cancelamento aprovado pela gestão. ${notes || ''}`
-        : `Cancelamento negado pela gestão. A solicitação retorna ao status anterior (${newStatus}). ${notes || ''}`;
-
-    const transaction = await sequelize.transaction();
-    try {
-        request.status = newStatus;
-        await request.save({ transaction });
-
-        await RequestStatusLog.create({
-            requestId,
-            status: newStatus,
-            responsibleId: managerId,
-            notes: logNotes
-        }, { transaction });
-
-        await transaction.commit();
-        
-        // Notificar o solicitante sobre a decisão
-        await notificationService.sendNotification({
-            recipient: request.solicitant.email,
-            subject: `Seu pedido de cancelamento para ${request.protocol} foi resolvido`,
-            message: `A gestão ${approved ? 'APROVOU' : 'NEGOU'} seu pedido de cancelamento. A solicitação agora está com o status: ${newStatus}.`
+    let newStatusName;
+    if (approved) {
+        const cancelledStep = await Step.findOne({ where: { name: 'CANCELADO' } });
+        if (!cancelledStep) throw new Error('Cancellation workflow step "CANCELADO" not found. Please configure it.');
+        newStatusName = cancelledStep.name;
+    } else {
+        // Se negado, ele volta ao status anterior.
+        const previousStatusLog = await RequestStatusLog.findOne({
+            where: { requestId, status: { [Op.ne]: 'CANCELAMENTO_SOLICITADO' } }, // Ignora o próprio pedido de cancelamento
+            order: [['createdAt', 'DESC']],
         });
-
-        return request;
-    } catch (error) {
-        await transaction.rollback();
-        throw error;
+        
+        if (!previousStatusLog) {
+            throw new Error('Could not determine the previous status of the request for cancellation denial.');
+        }
+        newStatusName = previousStatusLog.status; // Retorna ao status anterior
     }
+
+    const logNotes = approved
+        ? `Cancelamento aprovado pela gestão. ${notes || ''}`
+        : `Cancelamento negado pela gestão. A solicitação retorna ao status anterior (${newStatusName}). ${notes || ''}`;
+
+    const updatedRequest = await updateRequestStatus(request.id, newStatusName, managerId, logNotes);
+    
+    // Notificar o solicitante sobre a decisão
+    await notificationService.sendNotification({
+        recipient: request.solicitant.email,
+        subject: `Seu pedido de cancelamento para ${request.protocol} foi resolvido`,
+        message: `A gestão ${approved ? 'APROVOU' : 'NEGOU'} seu pedido de cancelamento. A solicitação agora está com o status: ${newStatusName}.`
+    });
+
+    return updatedRequest;
 };
 
 
@@ -439,7 +482,7 @@ const resolveCancellation = async (requestId, managerId, approved, notes) => {
  * @returns {Promise<Array<Request>>}
  */
 const exportAllRequests = async (filters, userInfo) => {
-    const { status, type, companyId, protocol } = filters;
+    const { status, workflowName, companyId, protocol } = filters; // Alterado 'type' para 'workflowName'
     const { id: userId, profile } = userInfo;
     const where = {};
   
@@ -450,9 +493,13 @@ const exportAllRequests = async (filters, userInfo) => {
     }
   
     if (status) where.status = status;
-    if (type) where.type = type;
     if (protocol) where.protocol = { [Op.iLike]: `%${protocol}%` };
     if (companyId) where.companyId = companyId;
+
+    let workflowWhere = {};
+    if (workflowName) {
+        workflowWhere.name = { [Op.iLike]: `%${workflowName}%` };
+    }
 
     const requests = await Request.findAll({
         where,
@@ -462,6 +509,7 @@ const exportAllRequests = async (filters, userInfo) => {
             { model: User, as: 'solicitant', attributes: ['name'] },
             { model: Position, as: 'position', attributes: ['name'] },
             { model: Employee, as: 'employee', attributes: ['name'] },
+            { model: Workflow, as: 'workflow', attributes: ['name'], where: workflowWhere, required: !!workflowName }, // NOVO
         ]
     });
     return requests;
@@ -470,13 +518,11 @@ const exportAllRequests = async (filters, userInfo) => {
 
 module.exports = {
   generateProtocol,
-  createAdmissionRequest,
-  createResignationRequest,
+  createRequest, // FUNÇÃO GENÉRICA AGORA
   findAllRequests,
   findRequestById,
-  analyzeRequestByManager,
-  updateRequestStatusByRh,
-    requestCancellation, 
+  updateRequestStatus, // FUNÇÃO GENÉRICA AGORA
+  requestCancellation, 
   resolveCancellation,
   exportAllRequests
 };
