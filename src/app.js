@@ -58,9 +58,9 @@ const PORT = process.env.PORT || 3001;
 
 const startServer = async () => {
   try {
-    // Sincroniza o banco de dados
-    await db.sequelize.sync(); 
-    console.log('Banco de dados sincronizado com sucesso.');
+    // Sincroniza o banco de dados forçando recriação das tabelas
+    await db.sequelize.sync({ force: true }); 
+    console.log('Banco de dados sincronizado com sucesso (force: true).');
 
     // Após sincronizar, garante que o admin padrão exista
     await createDefaultAdmin();
@@ -72,5 +72,6 @@ const startServer = async () => {
     console.error('Não foi possível conectar ao banco de dados:', error);
   }
 };
+
 
 startServer();
