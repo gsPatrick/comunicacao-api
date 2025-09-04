@@ -52,6 +52,31 @@ const updateUser = async (req, res) => {
   }
 };
 
+// NOVO: Função para o usuário atualizar seu próprio perfil (Item 4)
+const updateMyProfile = async (req, res) => {
+    try {
+        const userId = req.userId; // ID do usuário logado vem do token
+        const updateData = { ...req.body }; // Copia os dados do body
+
+        // Impedir que um usuário altere seu próprio perfil ou status de atividade
+        if (updateData.profile) {
+            delete updateData.profile;
+        }
+        if (updateData.isActive !== undefined) {
+            delete updateData.isActive;
+        }
+
+        const updatedUser = await userService.updateUser(userId, updateData);
+        if (!updatedUser) {
+            return res.status(404).json({ error: 'User not found.' }); // Improvável, mas para segurança
+        }
+        return res.status(200).json(updatedUser);
+    } catch (error) {
+        return res.status(500).json({ error: 'Internal server error', details: error.message });
+    }
+};
+
+
 const deleteUser = async (req, res) => {
   try {
     const success = await userService.softDeleteUser(req.params.id);
@@ -98,5 +123,6 @@ module.exports = {
   getUserById,
   updateUser,
   deleteUser,
-  exportUsers, // Adiciona a nova função à exportação
+  exportUsers,
+  updateMyProfile, // Adiciona a nova função à exportação
 };

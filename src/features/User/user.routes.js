@@ -32,13 +32,21 @@ router.get(
 );
 
 // Rota para atualizar um usuário. Apenas ADMINS podem atualizar qualquer usuário.
-// Um usuário comum poderá ter uma rota separada como /profile para atualizar seus próprios dados.
 router.put(
   '/:id',
   authMiddleware,
   authorizeMiddleware(['ADMIN']),
   userController.updateUser
 );
+
+// NOVO: Rota para um usuário atualizar seu próprio perfil (Item 4)
+// Não precisa de authorizeMiddleware, apenas authMiddleware para garantir que esteja logado.
+router.put(
+  '/profile/me',
+  authMiddleware,
+  userController.updateMyProfile
+);
+
 
 // Rota para desativar (soft delete) um usuário. Apenas ADMINS podem desativar usuários.
 router.delete(

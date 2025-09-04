@@ -9,8 +9,9 @@ const employeeRouter = require('../features/Employee/employee.routes');
 const requestRouter = require('../features/Request/request.routes');
 const associationRouter = require('../features/Association/association.routes');
 const dashboardRoutes = require('../features/Dashboard/dashboard.routes');
-const stepRouter = require('../features/Steps/steps.routes'); // <-- NOVO
-const workflowRouter = require('../features/Workflow/workflow.routes'); // <-- NOVO
+const stepRouter = require('../features/Steps/steps.routes');
+const workflowRouter = require('../features/Workflows/workflow.routes');
+const reportsRouter = require('../features/Reports/reports.routes'); // <-- NOVO
 
 const router = express.Router();
 
@@ -31,8 +32,11 @@ router.use('/associations', associationRouter);
 router.use('/dashboard', dashboardRoutes);
 
 // Novas rotas para configuração de fluxos
-router.use('/steps', stepRouter); // <-- NOVO
-router.use('/workflows', workflowRouter); // <-- NOVO
+router.use('/steps', stepRouter);
+router.use('/workflows', workflowRouter);
+
+// Rotas de Relatórios (protegidas)
+router.use('/reports', reportsRouter); // <-- NOVO
 
 // Rotas de Processos (protegidas)
 router.use('/requests', requestRouter);
