@@ -8,6 +8,7 @@ const positionRouter = require('../features/Position/position.routes');
 const employeeRouter = require('../features/Employee/employee.routes');
 const requestRouter = require('../features/Request/request.routes');
 const associationRouter = require('../features/Association/association.routes');
+const dashboardRoutes = require('../features/Dashboard/dashboard.routes'); // <-- ADICIONAR ESTA LINHA
 
 const router = express.Router();
 
@@ -25,6 +26,7 @@ router.use('/work-locations', workLocationRouter);
 router.use('/positions', positionRouter);
 router.use('/employees', employeeRouter);
 router.use('/associations', associationRouter);
+router.use('/dashboard', dashboardRoutes); // <-- ADICIONAR ESTA LINHA
 
 // Rotas de Processos (protegidas)
 router.use('/requests', requestRouter);
