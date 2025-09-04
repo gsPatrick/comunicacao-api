@@ -22,7 +22,7 @@ module.exports = (sequelize, DataTypes) => {
     order: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      unique: 'workflow_order_unique', // Garante que a ordem seja única para cada workflow
+      // REMOVIDO: unique: 'workflow_order_unique', // Esta propriedade tornaria 'order' único globalmente, o que não é o objetivo.
     },
     profileOverride: {
       type: DataTypes.ENUM('ADMIN', 'RH', 'GESTAO', 'SOLICITANTE'),
@@ -48,7 +48,8 @@ module.exports = (sequelize, DataTypes) => {
     indexes: [
       {
         unique: true,
-        fields: ['workflowId', 'order'],
+        fields: ['workflow_id', 'order'], // CORRIGIDO: 'workflowId' para 'workflow_id'
+        name: 'workflow_steps_workflow_id_order_unique', // Adicionando um nome explícito para o índice
       },
     ],
   });
