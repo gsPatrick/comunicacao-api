@@ -14,7 +14,8 @@ const createWorkLocation = async (req, res) => {
 
 const getAllWorkLocations = async (req, res) => {
   try {
-    const locationsData = await workLocationService.findAllWorkLocations(req.query);
+    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta userInfo
+    const locationsData = await workLocationService.findAllWorkLocations(req.query, userInfo); // Passa userInfo
     return res.status(200).json(locationsData);
   } catch (error) {
     return res.status(500).json({ error: 'Internal server error', details: error.message });
@@ -23,9 +24,10 @@ const getAllWorkLocations = async (req, res) => {
 
 const getWorkLocationById = async (req, res) => {
   try {
-    const workLocation = await workLocationService.findWorkLocationById(req.params.id);
+    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta userInfo
+    const workLocation = await workLocationService.findWorkLocationById(req.params.id, userInfo); // Passa userInfo
     if (!workLocation) {
-      return res.status(404).json({ error: 'Work location not found.' });
+      return res.status(404).json({ error: 'Work location not found or access denied.' }); // Mensagem ajustada
     }
     return res.status(200).json(workLocation);
   } catch (error) {

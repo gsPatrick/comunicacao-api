@@ -1,4 +1,4 @@
-const { WorkLocation, Contract } = require('../../models');
+const { WorkLocation, Contract, Company, UserCompany } = require('../../models'); // Adicionado Company, UserCompany
 const { Op } = require('sequelize');
 
 /**
@@ -19,20 +19,44 @@ const createWorkLocation = async (locationData) => {
 /**
  * Busca todos os locais de trabalho com filtros (por contractId) e paginação.
  * @param {object} filters - Opções de filtro (contractId, name, page, limit).
+ * @param {object} userInfo - Informações do usuário logado ({ id, profile }).
  * @returns {Promise<{total: number, workLocations: Array<WorkLocation>, page: number, limit: number}>}
  */
-const findAllWorkLocations = async (filters) => {
+const findAllWorkLocations = async (filters, userInfo) => {
   const { contractId, name, page = 1, limit = 10 } = filters;
   const where = {};
+  const companyWhere = {}; // Novo objeto where para a Company
 
   if (contractId) where.contractId = contractId;
   if (name) where.name = { [Op.iLike]: `%${name}%` };
+
+  // Lógica de permissão para GESTAO
+  if (userInfo && userInfo.profile === 'GESTAO') {
+    const userCompanies = await UserCompany.findAll({
+      where: { userId: userInfo.id },
+      attributes: ['companyId']
+    });
+    const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
+    companyWhere.id = { [Op.in]: allowedCompanyIds }; // Filtra as empresas pelas quais o gestor é responsável
+  }
 
   const offset = (page - 1) * limit;
 
   const { count, rows } = await WorkLocation.findAndCountAll({
     where,
-    include: [{ model: Contract, as: 'contract', attributes: ['id', 'name'] }],
+    include: [{
+      model: Contract,
+      as: 'contract',
+      attributes: ['id', 'name'],
+      include: [{ // Inclui Company dentro de Contract para aplicar o filtro
+        model: Company,
+        as: 'company',
+        attributes: [], // Não precisamos dos atributos da Company diretamente aqui
+        where: companyWhere,
+        required: !!(Object.keys(companyWhere).length > 0)
+      }],
+      required: !!(Object.keys(companyWhere).length > 0) // Garante que o JOIN com Contract e Company ocorra
+    }],
     limit,
     offset,
     order: [['name', 'ASC']],
@@ -44,11 +68,35 @@ const findAllWorkLocations = async (filters) => {
 /**
  * Busca um local de trabalho pelo seu ID.
  * @param {string} id - O ID do local.
+ * @param {object} userInfo - Informações do usuário logado ({ id, profile }).
  * @returns {Promise<WorkLocation|null>} O local de trabalho encontrado ou nulo.
  */
-const findWorkLocationById = async (id) => {
+const findWorkLocationById = async (id, userInfo) => {
+  const companyWhere = {}; // Novo objeto where para a Company
+
+  // Lógica de permissão para GESTAO
+  if (userInfo && userInfo.profile === 'GESTAO') {
+    const userCompanies = await UserCompany.findAll({
+      where: { userId: userInfo.id },
+      attributes: ['companyId']
+    });
+    const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
+    companyWhere.id = { [Op.in]: allowedCompanyIds }; // Filtra as empresas pelas quais o gestor é responsável
+  }
+
   const workLocation = await WorkLocation.findByPk(id, {
-    include: [{ model: Contract, as: 'contract' }]
+    include: [{
+      model: Contract,
+      as: 'contract',
+      include: [{ // Inclui Company dentro de Contract para aplicar o filtro
+        model: Company,
+        as: 'company',
+        attributes: [], // Não precisamos dos atributos da Company diretamente aqui
+        where: companyWhere,
+        required: !!(Object.keys(companyWhere).length > 0)
+      }],
+      required: !!(Object.keys(companyWhere).length > 0) // Garante que o JOIN com Contract e Company ocorra
+    }]
   });
   return workLocation;
 };

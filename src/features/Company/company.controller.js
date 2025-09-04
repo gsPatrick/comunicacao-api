@@ -14,7 +14,8 @@ const createCompany = async (req, res) => {
 
 const getAllCompanies = async (req, res) => {
   try {
-    const companiesData = await companyService.findAllCompanies(req.query);
+    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta userInfo
+    const companiesData = await companyService.findAllCompanies(req.query, userInfo); // Passa userInfo
     return res.status(200).json(companiesData);
   } catch (error) {
     return res.status(500).json({ error: 'Internal server error', details: error.message });
@@ -23,9 +24,10 @@ const getAllCompanies = async (req, res) => {
 
 const getCompanyById = async (req, res) => {
   try {
-    const company = await companyService.findCompanyById(req.params.id);
+    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta userInfo
+    const company = await companyService.findCompanyById(req.params.id, userInfo); // Passa userInfo
     if (!company) {
-      return res.status(404).json({ error: 'Company not found.' });
+      return res.status(404).json({ error: 'Company not found or access denied.' }); // Mensagem ajustada
     }
     return res.status(200).json(company);
   } catch (error) {
@@ -60,10 +62,10 @@ const deleteCompany = async (req, res) => {
   }
 };
 
-// Adicione esta nova função
 const exportCompanies = async (req, res) => {
   try {
-    const allCompanies = await companyService.findAllCompaniesForExport();
+    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta userInfo
+    const allCompanies = await companyService.findAllCompaniesForExport(req.query, userInfo); // Passa userInfo
     
     // Define os headers para forçar o download do arquivo
     res.setHeader('Content-disposition', 'attachment; filename=companies.json');

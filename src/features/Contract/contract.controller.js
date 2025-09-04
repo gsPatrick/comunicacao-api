@@ -17,7 +17,8 @@ const createContract = async (req, res) => {
 
 const getAllContracts = async (req, res) => {
   try {
-    const contractsData = await contractService.findAllContracts(req.query);
+    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta userInfo
+    const contractsData = await contractService.findAllContracts(req.query, userInfo); // Passa userInfo
     return res.status(200).json(contractsData);
   } catch (error) {
     return res.status(500).json({ error: 'Internal server error', details: error.message });
@@ -26,9 +27,10 @@ const getAllContracts = async (req, res) => {
 
 const getContractById = async (req, res) => {
   try {
-    const contract = await contractService.findContractById(req.params.id);
+    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta userInfo
+    const contract = await contractService.findContractById(req.params.id, userInfo); // Passa userInfo
     if (!contract) {
-      return res.status(404).json({ error: 'Contract not found.' });
+      return res.status(404).json({ error: 'Contract not found or access denied.' }); // Mensagem ajustada
     }
     return res.status(200).json(contract);
   } catch (error) {
