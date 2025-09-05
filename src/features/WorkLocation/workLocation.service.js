@@ -130,10 +130,35 @@ const deleteWorkLocation = async (id) => {
   return true;
 };
 
+// --- NOVA FUNÇÃO DE EXPORTAÇÃO ---
+const exportAllWorkLocations = async (filters, userInfo) => {
+    const { contractId, name } = filters;
+    const where = {};
+    const companyWhere = {};
+    if (contractId) where.contractId = contractId;
+    if (name) where.name = { [Op.iLike]: `%${name}%` };
+    if (userInfo && userInfo.profile === 'GESTAO') {
+        const userCompanies = await UserCompany.findAll({ where: { userId: userInfo.id }, attributes: ['companyId'] });
+        const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
+        companyWhere.id = { [Op.in]: allowedCompanyIds };
+    }
+    const workLocations = await WorkLocation.findAll({
+        where,
+        include: [{
+            model: Contract, as: 'contract', attributes: ['id', 'name'],
+            include: [{ model: Company, as: 'company', attributes: [], where: companyWhere, required: !!(Object.keys(companyWhere).length > 0) }],
+            required: true
+        }],
+        order: [['name', 'ASC']],
+    });
+    return workLocations;
+};
+
 module.exports = {
   createWorkLocation,
   findAllWorkLocations,
   findWorkLocationById,
   updateWorkLocation,
   deleteWorkLocation,
+  exportAllWorkLocations
 };

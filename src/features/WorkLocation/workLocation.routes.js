@@ -6,6 +6,9 @@ const authorizeMiddleware = require('../../middlewares/authorize.middleware');
 const router = express.Router();
 
 // --- PERMISSÕES AJUSTADAS POR ROTA ---
+// --- NOVA ROTA DE EXPORTAÇÃO ---
+router.get('/export', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), workLocationController.exportWorkLocations);
+
 
 // Rota para CRIAR: ADMIN, RH e GESTAO podem criar.
 router.post(

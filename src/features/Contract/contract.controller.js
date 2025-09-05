@@ -1,4 +1,6 @@
+
 const contractService = require('./contract.service');
+const xlsxService = require('../../utils/xlsx.service'); // Importa o serviço de XLSX
 
 const createContract = async (req, res) => {
   try {
@@ -17,8 +19,8 @@ const createContract = async (req, res) => {
 
 const getAllContracts = async (req, res) => {
   try {
-    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta userInfo
-    const contractsData = await contractService.findAllContracts(req.query, userInfo); // Passa userInfo
+    const userInfo = { id: req.userId, profile: req.userProfile };
+    const contractsData = await contractService.findAllContracts(req.query, userInfo);
     return res.status(200).json(contractsData);
   } catch (error) {
     return res.status(500).json({ error: 'Internal server error', details: error.message });
@@ -27,10 +29,10 @@ const getAllContracts = async (req, res) => {
 
 const getContractById = async (req, res) => {
   try {
-    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta userInfo
-    const contract = await contractService.findContractById(req.params.id, userInfo); // Passa userInfo
+    const userInfo = { id: req.userId, profile: req.userProfile };
+    const contract = await contractService.findContractById(req.params.id, userInfo);
     if (!contract) {
-      return res.status(404).json({ error: 'Contract not found or access denied.' }); // Mensagem ajustada
+      return res.status(404).json({ error: 'Contract not found or access denied.' });
     }
     return res.status(200).json(contract);
   } catch (error) {
@@ -62,10 +64,37 @@ const deleteContract = async (req, res) => {
   }
 };
 
+// --- NOVA FUNÇÃO DE EXPORTAÇÃO ---
+const exportContracts = async (req, res) => {
+    try {
+        const userInfo = { id: req.userId, profile: req.userProfile };
+        const contracts = await contractService.exportAllContracts(req.query, userInfo);
+
+        const formattedData = contracts.map(c => ({
+            'Nome do Contrato': c.name,
+            'Número do Contrato': c.contractNumber,
+            'Cliente': c.company ? c.company.tradeName : '',
+            'Data de Início': c.startDate,
+            'Data de Fim': c.endDate,
+        }));
+        
+        const buffer = xlsxService.jsonToXlsxBuffer(formattedData);
+        const filename = `contratos-${new Date().toISOString().slice(0,10)}.xlsx`;
+
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.send(buffer);
+
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to export data.', details: error.message });
+    }
+};
+
 module.exports = {
   createContract,
   getAllContracts,
   getContractById,
   updateContract,
   deleteContract,
+  exportContracts, // Adicionado
 };

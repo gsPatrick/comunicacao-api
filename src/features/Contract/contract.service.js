@@ -121,10 +121,31 @@ const deleteContract = async (id) => {
   return true;
 };
 
+// --- NOVA FUNÇÃO DE EXPORTAÇÃO ---
+const exportAllContracts = async (filters, userInfo) => {
+  const { companyId, name } = filters;
+  const where = {};
+  const companyWhere = {};
+  if (name) where.name = { [Op.iLike]: `%${name}%` };
+  if (companyId) where.companyId = companyId;
+  if (userInfo && userInfo.profile === 'GESTAO') {
+    const userCompanies = await UserCompany.findAll({ where: { userId: userInfo.id }, attributes: ['companyId'] });
+    const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
+    companyWhere.id = { [Op.in]: allowedCompanyIds };
+  }
+  const contracts = await Contract.findAll({
+    where,
+    include: [{ model: Company, as: 'company', attributes: ['id', 'tradeName'], where: companyWhere, required: !!(Object.keys(companyWhere).length > 0) }],
+    order: [['name', 'ASC']],
+  });
+  return contracts;
+};
+
 module.exports = {
   createContract,
   findAllContracts,
   findContractById,
   updateContract,
   deleteContract,
+  exportAllContracts
 };
