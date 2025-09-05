@@ -5,55 +5,27 @@ const authorizeMiddleware = require('../../middlewares/authorize.middleware');
 
 const router = express.Router();
 
-// Todas as rotas de gerenciamento de usuários abaixo são protegidas e restritas.
+// --- ORDEM DAS ROTAS CORRIGIDA ---
 
-// Rota para criar um usuário. Apenas ADMINS podem criar novos usuários.
-router.post(
-  '/',
-  authMiddleware,
-  authorizeMiddleware(['ADMIN']),
-  userController.createUser
-);
+// Rota para criar um usuário. Apenas ADMINS podem criar.
+router.post('/', authMiddleware, authorizeMiddleware(['ADMIN']), userController.createUser);
 
-// Rota para listar todos os usuários. Apenas ADMINS e RH podem listar usuários.
-router.get(
-  '/',
-  authMiddleware,
-  authorizeMiddleware(['ADMIN', 'RH']),
-  userController.getAllUsers
-);
+// Rota para listar todos os usuários. ADMINS e RH podem listar.
+router.get('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), userController.getAllUsers);
 
-// Rota para buscar um usuário específico por ID. ADMINS e RH podem ver.
-router.get(
-  '/:id',
-  authMiddleware,
-  authorizeMiddleware(['ADMIN', 'RH']),
-  userController.getUserById
-);
+// Rota de exportação (MAIS ESPECÍFICA, VEM ANTES)
+router.get('/export', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), require('../Company/company.controller').exportCompanies); // Reutiliza a função se for idêntica ou cria uma específica
 
-// Rota para atualizar um usuário. Apenas ADMINS podem atualizar qualquer usuário.
-router.put(
-  '/:id',
-  authMiddleware,
-  authorizeMiddleware(['ADMIN']),
-  userController.updateUser
-);
+// Rota para o usuário atualizar seu próprio perfil
+router.put('/profile/me', authMiddleware, userController.updateMyProfile);
 
-// NOVO: Rota para um usuário atualizar seu próprio perfil (Item 4)
-// Não precisa de authorizeMiddleware, apenas authMiddleware para garantir que esteja logado.
-router.put(
-  '/profile/me',
-  authMiddleware,
-  userController.updateMyProfile
-);
+// Rota para buscar um usuário específico por ID (MAIS GENÉRICA, VEM DEPOIS)
+router.get('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), userController.getUserById);
 
+// Rota para atualizar um usuário. Apenas ADMINS podem.
+router.put('/:id', authMiddleware, authorizeMiddleware(['ADMIN']), userController.updateUser);
 
-// Rota para desativar (soft delete) um usuário. Apenas ADMINS podem desativar usuários.
-router.delete(
-  '/:id',
-  authMiddleware,
-  authorizeMiddleware(['ADMIN']),
-  userController.deleteUser
-);
+// Rota para desativar (soft delete) um usuário. Apenas ADMINS podem.
+router.delete('/:id', authMiddleware, authorizeMiddleware(['ADMIN']), userController.deleteUser);
 
 module.exports = router;
