@@ -10,8 +10,8 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
-      // Uma notificação pertence a um usuário (o destinatário)
-      this.belongsTo(models.User, { foreignKey: 'userId', as: 'recipient' });
+      // define association here
+      this.belongsTo(models.User, { foreignKey: 'userId', as: 'user' });
     }
   }
   Notification.init({
@@ -20,13 +20,9 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    userId: { // Chave estrangeira para o usuário que recebe a notificação
+    userId: {
       type: DataTypes.UUID,
       allowNull: false,
-      references: {
-        model: 'Users',
-        key: 'id'
-      }
     },
     title: {
       type: DataTypes.STRING,
@@ -36,7 +32,7 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: false,
     },
-    link: { // Link opcional para redirecionar o usuário (ex: /solicitacoes/uuid-da-solicitacao)
+    link: {
       type: DataTypes.STRING,
       allowNull: true,
     },
@@ -45,13 +41,14 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: false,
     },
-    data: { // Campo JSON para armazenar metadados, se necessário
+    data: {
       type: DataTypes.JSONB,
       allowNull: true,
     }
   }, {
     sequelize,
     modelName: 'Notification',
+    tableName: 'notifications' // Força o nome da tabela para minúsculo e plural
   });
   return Notification;
 };

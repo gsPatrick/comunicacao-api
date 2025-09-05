@@ -1,26 +1,25 @@
 'use strict';
 const { Model } = require('sequelize');
-
 module.exports = (sequelize, DataTypes) => {
-  class CompanyPosition extends Model {
-    static associate(models) {
-      // Associações podem ser definidas aqui se necessário
-    }
-  }
-  CompanyPosition.init({
-    companyId: {
-      type: DataTypes.UUID,
-      references: { model: 'Companies', key: 'id' },
-      primaryKey: true,
-    },
-    positionId: {
-      type: DataTypes.UUID,
-      references: { model: 'Positions', key: 'id' },
-      primaryKey: true,
-    },
-  }, {
-    sequelize,
-    modelName: 'CompanyPosition',
-  });
-  return CompanyPosition;
+class UserCompany extends Model {
+static associate(models) {
+// Associações podem ser definidas aqui se necessário
+}
+}
+UserCompany.init({
+userId: {
+type: DataTypes.UUID,
+references: { model: 'users', key: 'id' }, // CORRIGIDO: 'Users' para 'users'
+primaryKey: true,
+},
+companyId: {
+type: DataTypes.UUID,
+references: { model: 'companies', key: 'id' }, // CORRIGIDO: 'Companies' para 'companies'
+primaryKey: true,
+},
+}, {
+sequelize,
+modelName: 'UserCompany',
+});
+return UserCompany;
 };
