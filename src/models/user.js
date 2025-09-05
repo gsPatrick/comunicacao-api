@@ -5,11 +5,8 @@ const bcrypt = require('bcryptjs');
 module.exports = (sequelize, DataTypes) => {
   class User extends Model {
     static associate(models) {
-      // Um usuário (solicitante) pode criar várias solicitações
       this.hasMany(models.Request, { foreignKey: 'solicitantId', as: 'createdRequests' });
-      // Um usuário (RH/Gestão) pode ser o responsável por atualizar o status de várias solicitações
       this.hasMany(models.RequestStatusLog, { foreignKey: 'responsibleId', as: 'statusUpdates' });
-      // Um usuário (Gestão/Solicitante) pode estar vinculado a várias empresas
       this.belongsToMany(models.Company, { through: 'UserCompany', foreignKey: 'userId', as: 'companies' });
     }
   }
@@ -55,10 +52,13 @@ module.exports = (sequelize, DataTypes) => {
           user.password = await bcrypt.hash(user.password, 8);
         }
       },
-      beforeUpdate: async(user) => {
-        if (user.password) {
+      beforeUpdate: async (user) => {
+        // --- CORREÇÃO APLICADA AQUI ---
+        // O hook agora só executa o hash se o campo 'password' foi de fato alterado.
+        if (user.changed('password')) {
           user.password = await bcrypt.hash(user.password, 8);
         }
+        // -----------------------------
       }
     }
   });
