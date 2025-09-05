@@ -19,7 +19,11 @@ const createEmployee = async (req, res) => {
 
 const getAllEmployees = async (req, res) => {
   try {
-    const employeesData = await employeeService.findAllEmployees(req.query);
+    // --- CORREÇÃO APLICADA AQUI ---
+    // Coleta as informações do usuário diretamente do `req` e passa para o service.
+    const userInfo = { id: req.userId, profile: req.userProfile };
+    const employeesData = await employeeService.findAllEmployees(req.query, userInfo);
+    // -----------------------------
     return res.status(200).json(employeesData);
   } catch (error) {
     return res.status(500).json({ error: 'Internal server error', details: error.message });
@@ -81,16 +85,18 @@ const bulkImport = async (req, res) => {
 
 const exportEmployees = async (req, res) => {
     try {
-        const employees = await employeeService.exportAllEmployees(req.query);
+        // --- CORREÇÃO APLICADA AQUI TAMBÉM ---
+        const userInfo = { id: req.userId, profile: req.userProfile };
+        const employees = await employeeService.exportAllEmployees(req.query, userInfo);
+        // ------------------------------------
 
-        // Formata os dados para um formato plano e amigável para a planilha
         const formattedData = employees.map(emp => ({
             'Nome Completo': emp.name,
             'CPF': emp.cpf,
             'Matrícula': emp.registration,
             'Data de Admissão': emp.admissionDate,
             'Categoria': emp.category,
-            'Cargo': emp.position ? emp.position.name : '',
+            'Categoria (Cargo)': emp.position ? emp.position.name : '',
             'Contrato': emp.contract ? emp.contract.name : '',
             'Local de Trabalho': emp.workLocation ? emp.workLocation.name : '',
         }));
@@ -104,32 +110,6 @@ const exportEmployees = async (req, res) => {
 
     } catch (error) {
         res.status(500).json({ error: 'Failed to export data.', details: error.message });
-    }
-};
-
-
-const exportCompanies = async (req, res) => {
-    try {
-        const companies = await companyService.exportAllCompanies(req.query);
-
-        const formattedData = companies.map(company => ({
-            'ID': company.id,
-            'Razão Social': company.corporateName,
-            'Nome Fantasia': company.tradeName,
-            'CNPJ': company.cnpj,
-            'Endereço': company.address,
-            'Data de Criação': company.createdAt,
-        }));
-
-        const buffer = xlsxService.jsonToXlsxBuffer(formattedData);
-        const filename = `empresas-clientes-${new Date().toISOString().slice(0,10)}.xlsx`;
-
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.send(buffer);
-
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to export company data.', details: error.message });
     }
 };
 
