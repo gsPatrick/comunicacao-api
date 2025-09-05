@@ -19,11 +19,10 @@ const createEmployee = async (req, res) => {
 
 const getAllEmployees = async (req, res) => {
   try {
-    // --- CORREÇÃO APLICADA AQUI ---
-    // Coleta as informações do usuário diretamente do `req` e passa para o service.
+    // Coleta as informações do usuário logado diretamente do objeto `req`
     const userInfo = { id: req.userId, profile: req.userProfile };
+    // Passa `userInfo` para a função do serviço, que aplicará as regras de permissão
     const employeesData = await employeeService.findAllEmployees(req.query, userInfo);
-    // -----------------------------
     return res.status(200).json(employeesData);
   } catch (error) {
     return res.status(500).json({ error: 'Internal server error', details: error.message });
@@ -85,17 +84,16 @@ const bulkImport = async (req, res) => {
 
 const exportEmployees = async (req, res) => {
     try {
-        // --- CORREÇÃO APLICADA AQUI TAMBÉM ---
+        // Coleta as informações do usuário logado para a função de exportação também
         const userInfo = { id: req.userId, profile: req.userProfile };
         const employees = await employeeService.exportAllEmployees(req.query, userInfo);
-        // ------------------------------------
 
         const formattedData = employees.map(emp => ({
             'Nome Completo': emp.name,
             'CPF': emp.cpf,
             'Matrícula': emp.registration,
             'Data de Admissão': emp.admissionDate,
-            'Categoria': emp.category,
+            'Escala': emp.category, // Campo "category" da planilha original
             'Categoria (Cargo)': emp.position ? emp.position.name : '',
             'Contrato': emp.contract ? emp.contract.name : '',
             'Local de Trabalho': emp.workLocation ? emp.workLocation.name : '',
@@ -112,6 +110,7 @@ const exportEmployees = async (req, res) => {
         res.status(500).json({ error: 'Failed to export data.', details: error.message });
     }
 };
+
 
 module.exports = {
   createEmployee,
