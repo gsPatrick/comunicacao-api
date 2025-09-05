@@ -5,29 +5,15 @@ const authorizeMiddleware = require('../../middlewares/authorize.middleware');
 
 const router = express.Router();
 
-// Protege todas as rotas de associação, permitindo acesso apenas a ADMIN.
-// Apenas o ADMIN pode gerenciar quem vê o quê.
-router.use(authMiddleware, authorizeMiddleware(['ADMIN']));
+// --- PERMISSÕES AJUSTADAS POR ROTA ---
 
-// =================================================================
-// ROTAS DE AÇÃO
-// =================================================================
+// Apenas o ADMIN pode gerenciar (vincular/desvincular) associações.
+router.post('/users/:userId/companies', authMiddleware, authorizeMiddleware(['ADMIN']), associationController.linkUserToCompanies);
+router.delete('/users/:userId/companies/:companyId', authMiddleware, authorizeMiddleware(['ADMIN']), associationController.unlinkUserFromCompany);
 
-// Vincula um usuário a um conjunto de empresas
-router.post('/users/:userId/companies', associationController.linkUserToCompanies);
-
-// Desvincula um usuário de uma empresa específica
-router.delete('/users/:userId/companies/:companyId', associationController.unlinkUserFromCompany);
-
-
-// =================================================================
-// ROTAS DE CONSULTA
-// =================================================================
-
-// Lista todas as empresas vinculadas a um usuário
-router.get('/users/:userId/companies', associationController.getCompaniesByUser);
-
-// Lista todos os usuários vinculados a uma empresa
-router.get('/companies/:companyId/users', associationController.getUsersByCompany);
+// ADMIN, GESTAO e SOLICITANTE podem consultar associações.
+// A lógica de "ver apenas o seu" será tratada no controller.
+router.get('/users/:userId/companies', authMiddleware, authorizeMiddleware(['ADMIN', 'GESTAO', 'SOLICITANTE']), associationController.getCompaniesByUser);
+router.get('/companies/:companyId/users', authMiddleware, authorizeMiddleware(['ADMIN']), associationController.getUsersByCompany);
 
 module.exports = router;

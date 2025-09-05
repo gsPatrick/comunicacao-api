@@ -5,19 +5,24 @@ const authorizeMiddleware = require('../../middlewares/authorize.middleware');
 const companyController = require('../Company/company.controller');
 
 const router = express.Router();
-router.get('/export', employeeController.exportEmployees); // Agora chama a função correta no controller correto
+router.get('/export', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), employeeController.exportEmployees);
 
-// Protege todas as rotas de colaboradores, permitindo acesso apenas a ADMIN e RH.
-router.use(authMiddleware, authorizeMiddleware(['ADMIN', 'RH']));
+// --- PERMISSÕES AJUSTADAS PARA PERMITIR LEITURA PELO SOLICITANTE ---
+// A lógica de segurança para filtrar os dados estará no service.
+router.get(
+    '/',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO', 'SOLICITANTE']), // Adicionado SOLICITANTE e GESTAO
+    employeeController.getAllEmployees
+);
 
 // Rota para importação em lote
-router.post('/import', employeeController.bulkImport);
+router.post('/import', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), employeeController.bulkImport);
 
-// Rotas de CRUD para Colaboradores
-router.post('/', employeeController.createEmployee);
-router.get('/', employeeController.getAllEmployees);
-router.get('/:id', employeeController.getEmployeeById);
-router.put('/:id', employeeController.updateEmployee);
-router.delete('/:id', employeeController.deleteEmployee);
+// Rotas de CRUD para Colaboradores (exceto GET que foi movido para cima)
+router.post('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), employeeController.createEmployee);
+router.get('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), employeeController.getEmployeeById);
+router.put('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), employeeController.updateEmployee);
+router.delete('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), employeeController.deleteEmployee);
 
 module.exports = router;

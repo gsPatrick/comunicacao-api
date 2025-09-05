@@ -1,4 +1,4 @@
-const { Employee, Position, WorkLocation, Contract } = require('../../models');
+const { Employee, Position, WorkLocation, Contract, UserCompany, Company } = require('../../models'); // Adicionado UserCompany e Company
 const { Op } = require('sequelize');
 
 /**
@@ -26,12 +26,14 @@ const createEmployee = async (employeeData) => {
 };
 
 /**
- * Busca todos os colaboradores com filtros e paginação.
+ * Busca todos os colaboradores com filtros e paginação, aplicando regras de permissão.
  * @param {object} filters - Opções de filtro (name, cpf, registration, etc.).
+ * @param {object} userInfo - Informações do usuário logado ({ id, profile }).
  * @returns {Promise<{total: number, employees: Array<Employee>, page: number, limit: number}>}
  */
-const findAllEmployees = async (filters) => {
+const findAllEmployees = async (filters, userInfo) => {
   const { name, cpf, registration, contractId, workLocationId, page = 1, limit = 10 } = filters;
+  const { id: userId, profile } = userInfo;
   const where = {};
 
   if (name) where.name = { [Op.iLike]: `%${name}%` };
@@ -39,6 +41,25 @@ const findAllEmployees = async (filters) => {
   if (registration) where.registration = { [Op.like]: `%${registration}%` };
   if (contractId) where.contractId = contractId;
   if (workLocationId) where.workLocationId = workLocationId;
+
+  // Se o usuário for GESTAO ou SOLICITANTE, ele só pode ver funcionários das empresas a que tem acesso
+  if (profile === 'GESTAO' || profile === 'SOLICITANTE') {
+    const userCompanies = await UserCompany.findAll({
+        where: { userId },
+        attributes: ['companyId']
+    });
+    const companyIds = userCompanies.map(uc => uc.companyId);
+
+    // Encontra todos os contratos ligados a essas empresas
+    const accessibleContracts = await Contract.findAll({
+        where: { companyId: { [Op.in]: companyIds } },
+        attributes: ['id']
+    });
+    const accessibleContractIds = accessibleContracts.map(c => c.id);
+    
+    // Adiciona a cláusula de filtro principal: o funcionário deve pertencer a um desses contratos
+    where.contractId = { [Op.in]: accessibleContractIds };
+  }
 
   const offset = (page - 1) * limit;
 
@@ -104,7 +125,6 @@ const deleteEmployee = async (id) => {
 
 /**
  * Realiza a importação de múltiplos colaboradores em lote.
- * Conforme a estrutura da planilha: CPF, Matricula, Nome, Local de Trabalho, Data Admissao, Contrato, Categoria
  * @param {Array<object>} employeesData - Array de objetos de colaboradores.
  * @returns {Promise<{successCount: number, errorCount: number, errors: Array<object>}>} Relatório da importação.
  */
@@ -113,10 +133,8 @@ const bulkImportEmployees = async (employeesData) => {
     let errorCount = 0;
     const errors = [];
 
-    // Usar `for...of` para permitir o uso de `await` dentro do loop.
     for (const employeeRecord of employeesData) {
         try {
-            // A importação deve ser robusta, validando se CPF e Matrícula já existem.
             const existing = await Employee.findOne({
                 where: {
                     [Op.or]: [
@@ -129,11 +147,6 @@ const bulkImportEmployees = async (employeesData) => {
             if (existing) {
                 throw new Error(`CPF or Registration already exists for record: ${employeeRecord.name}`);
             }
-
-            // A importação deve ser capaz de associar por nome, se IDs não forem fornecidos.
-            // Esta é uma lógica complexa e aqui está uma versão simplificada.
-            // Em um sistema real, seria necessário buscar IDs de contrato, local, etc.
-            // Por simplicidade, vamos assumir que os IDs são fornecidos.
             await createEmployee(employeeRecord);
             successCount++;
         } catch (error) {
@@ -149,13 +162,14 @@ const bulkImportEmployees = async (employeesData) => {
 };
 
 /**
- * Busca TODOS os colaboradores que correspondem aos filtros, sem paginação.
+ * Busca TODOS os colaboradores que correspondem aos filtros, sem paginação, para exportação.
  * @param {object} filters - Opções de filtro.
+ * @param {object} userInfo - Informações do usuário logado.
  * @returns {Promise<Array<Employee>>} Um array com todos os colaboradores encontrados.
  */
-const exportAllEmployees = async (filters) => {
-  // Removemos a paginação para exportar todos os resultados
+const exportAllEmployees = async (filters, userInfo) => {
   const { name, cpf, registration, contractId, workLocationId } = filters;
+  const { id: userId, profile } = userInfo;
   const where = {};
 
   if (name) where.name = { [Op.iLike]: `%${name}%` };
@@ -163,6 +177,14 @@ const exportAllEmployees = async (filters) => {
   if (registration) where.registration = { [Op.like]: `%${registration}%` };
   if (contractId) where.contractId = contractId;
   if (workLocationId) where.workLocationId = workLocationId;
+  
+  if (profile === 'GESTAO' || profile === 'SOLICITANTE') {
+    const userCompanies = await UserCompany.findAll({ where: { userId }, attributes: ['companyId'] });
+    const companyIds = userCompanies.map(uc => uc.companyId);
+    const accessibleContracts = await Contract.findAll({ where: { companyId: { [Op.in]: companyIds } }, attributes: ['id'] });
+    const accessibleContractIds = accessibleContracts.map(c => c.id);
+    where.contractId = { [Op.in]: accessibleContractIds };
+  }
 
   const employees = await Employee.findAll({
     where,
@@ -177,26 +199,6 @@ const exportAllEmployees = async (filters) => {
   return employees;
 };
 
-/**
- * Busca TODAS as empresas que correspondem aos filtros, sem paginação.
- * @param {object} filters - Opções de filtro (tradeName, cnpj).
- * @returns {Promise<Array<Company>>} Um array com todas as empresas encontradas.
- */
-const exportAllCompanies = async (filters) => {
-  const { tradeName, cnpj } = filters;
-  const where = {};
-
-  if (tradeName) where.tradeName = { [Op.iLike]: `%${tradeName}%` };
-  if (cnpj) where.cnpj = { [Op.like]: `%${cnpj}%` };
-
-  const companies = await Company.findAll({
-    where,
-    order: [['tradeName', 'ASC']],
-  });
-
-  return companies;
-};
-
 module.exports = {
   createEmployee,
   findAllEmployees,
@@ -205,5 +207,4 @@ module.exports = {
   deleteEmployee,
   bulkImportEmployees,
   exportAllEmployees,
-  exportAllCompanies
 };
