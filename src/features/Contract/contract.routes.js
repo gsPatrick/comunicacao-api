@@ -5,14 +5,24 @@ const authorizeMiddleware = require('../../middlewares/authorize.middleware');
 
 const router = express.Router();
 
-router.post('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), contractController.createContract);
-router.get('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), contractController.getAllContracts);
+// --- PERMISSÕES AJUSTADAS POR ROTA ---
 
-// --- NOVA ROTA DE EXPORTAÇÃO ---
+// CRIAR: Apenas ADMIN, RH e GESTAO
+router.post('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), contractController.createContract);
+
+// LER (LISTAR): ADMIN, RH, GESTAO e agora SOLICITAN.TE (para preencher formulários)
+router.get('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO', 'SOLICITANTE']), contractController.getAllContracts);
+
+// EXPORTAR: ADMIN, RH e GESTAO
 router.get('/export', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), contractController.exportContracts);
 
+// LER (DETALHES): ADMIN, RH e GESTAO
 router.get('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), contractController.getContractById);
+
+// ATUALIZAR: Apenas ADMIN e RH
 router.put('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), contractController.updateContract);
+
+// DELETAR: Apenas ADMIN e RH
 router.delete('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), contractController.deleteContract);
 
 module.exports = router;

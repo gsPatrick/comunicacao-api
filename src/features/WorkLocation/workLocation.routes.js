@@ -6,48 +6,23 @@ const authorizeMiddleware = require('../../middlewares/authorize.middleware');
 const router = express.Router();
 
 // --- PERMISSÕES AJUSTADAS POR ROTA ---
-// --- NOVA ROTA DE EXPORTAÇÃO ---
+
+// CRIAR: Apenas ADMIN, RH e GESTAO
+router.post('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), workLocationController.createWorkLocation);
+
+// LER (LISTAR): ADMIN, RH, GESTAO e agora SOLICITAN.TE (para preencher formulários)
+router.get('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO', 'SOLICITANTE']), workLocationController.getAllWorkLocations);
+
+// EXPORTAR: ADMIN, RH e GESTAO
 router.get('/export', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), workLocationController.exportWorkLocations);
 
+// LER (DETALHES): ADMIN, RH e GESTAO
+router.get('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), workLocationController.getWorkLocationById);
 
-// Rota para CRIAR: ADMIN, RH e GESTAO podem criar.
-router.post(
-    '/',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
-    workLocationController.createWorkLocation
-);
+// ATUALIZAR: Apenas ADMIN e RH
+router.put('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), workLocationController.updateWorkLocation);
 
-// Rota para LISTAR: ADMIN, RH e GESTAO podem listar.
-router.get(
-    '/',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
-    workLocationController.getAllWorkLocations
-);
-
-// Rota para DETALHES: ADMIN, RH e GESTAO podem ver detalhes.
-router.get(
-    '/:id',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
-    workLocationController.getWorkLocationById
-);
-
-// Rota para ATUALIZAR: Apenas ADMIN e RH podem editar.
-router.put(
-    '/:id',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH']),
-    workLocationController.updateWorkLocation
-);
-
-// Rota para DELETAR: Apenas ADMIN e RH podem deletar.
-router.delete(
-    '/:id',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH']),
-    workLocationController.deleteWorkLocation
-);
+// DELETAR: Apenas ADMIN e RH
+router.delete('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), workLocationController.deleteWorkLocation);
 
 module.exports = router;
