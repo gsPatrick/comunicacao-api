@@ -1,5 +1,6 @@
 const { User } = require('../../models');
 const { Op } = require('sequelize');
+const emailService = require('../Email/email.service'); // <-- NOVO: Importa o serviço de email
 
 /**
  * Cria um novo usuário no banco de dados.
@@ -8,6 +9,19 @@ const { Op } = require('sequelize');
  */
 const createUser = async (userData) => {
   const user = await User.create(userData);
+
+  // --- NOVO: Envio de e-mail de boas-vindas ---
+  if (user && userData.password) {
+    try {
+      await emailService.sendWelcomeEmail(user, userData.password);
+    } catch (emailError) {
+      // O erro já é logado dentro do emailService.
+      // A falha no envio de email não deve impedir a criação do usuário.
+      console.error(`Falha ao enfileirar e-mail de boas-vindas para ${user.email}, mas o usuário foi criado.`);
+    }
+  }
+  // ---------------------------------------------
+
   user.password = undefined; // Nunca retorne a senha
   return user;
 };

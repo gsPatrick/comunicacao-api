@@ -8,13 +8,13 @@ const {
   Position,
   Employee,
   UserCompany,
-  Workflow, // NOVO
-  Step,     // NOVO
-  WorkflowStep, // NOVO
+  Workflow,
+  Step,
+  WorkflowStep,
   sequelize
 } = require('../../models');
 const { Op } = require('sequelize');
-const notificationService = require('../../services/notification.service');
+const notificationService = require('../Notifications/notification.service'); // <-- ATUALIZADO para o novo serviço de notificações
 
 /**
  * Gera um número de protocolo único para o dia.
@@ -74,7 +74,7 @@ const createRequest = async (workflowName, requestData, solicitantId) => {
   }
   if (employeeId) {
     employee = await Employee.findByPk(employeeId, {
-      where: { contractId, workLocationId }
+      where: { contractId, workLocationId } // Validação de consistência
     });
     if (!employee) throw new Error('Invalid Data: Employee not found or does not belong to the specified contract/location.');
   }
@@ -114,8 +114,8 @@ const createRequest = async (workflowName, requestData, solicitantId) => {
     await transaction.commit();
 
     // Notificação para o perfil responsável pela próxima etapa (se houver) ou Gestores
-    await sendNotificationForNextStep(newRequest, initialWorkflowStep.step, solicitantId);
-
+    await sendNotificationForNextStep(newRequest, initialWorkflowStep.step, solicitantId, null); // Passa o ID do criador como responsável
+    
     return newRequest;
   } catch (error) {
     await transaction.rollback();
@@ -127,10 +127,21 @@ const createRequest = async (workflowName, requestData, solicitantId) => {
  * Função auxiliar para enviar notificações após a criação/atualização de uma solicitação.
  * @param {Request} request - O objeto da solicitação.
  * @param {Step} currentStep - O objeto da Step que define o status atual.
- * @param {string} responsibleId - ID do usuário que realizou a ação.
+ * @param {string} responsibleUserId - ID do usuário que realizou a ação.
  * @param {string} customMessage - Mensagem customizada para notificação.
  */
-const sendNotificationForNextStep = async (request, currentStep, responsibleId, customMessage = null) => {
+const sendNotificationForNextStep = async (request, currentStep, responsibleUserId, customMessage = null) => {
+    // Carregar informações necessárias para a notificação
+    const fullRequest = await Request.findByPk(request.id, {
+        include: [
+            { model: User, as: 'solicitant', attributes: ['id', 'email', 'name'] },
+            { model: Company, as: 'company', attributes: ['tradeName'] },
+            { model: Workflow, as: 'workflow', attributes: ['name'] },
+            { model: Employee, as: 'employee', attributes: ['name'] }, // Para desligamento/substituição
+            { model: Position, as: 'position', attributes: ['name'] }, // Para admissão
+        ]
+    });
+
     const workflowSteps = await WorkflowStep.findAll({
         where: { workflowId: request.workflowId },
         order: [['order', 'ASC']],
@@ -140,34 +151,45 @@ const sendNotificationForNextStep = async (request, currentStep, responsibleId, 
     const currentWorkflowStep = workflowSteps.find(ws => ws.step.name === currentStep.name);
 
     let nextRecipientProfile = null;
-    let notificationSubject = `Solicitação ${request.protocol} - Status: ${currentStep.name}`;
-    let notificationMessage = customMessage || `O status da solicitação ${request.protocol} foi atualizado para "${currentStep.name}".`;
+    let notificationTitle = `Solicitação ${fullRequest.protocol} - Status: ${currentStep.name}`;
+    let notificationMessage = customMessage || `O status da solicitação ${fullRequest.protocol} foi atualizado para "${currentStep.name}".`;
+    let notificationLink = `/requests/${fullRequest.id}`; // Exemplo de link para o frontend
 
     if (currentWorkflowStep && Array.isArray(currentWorkflowStep.allowedNextStepIds) && currentWorkflowStep.allowedNextStepIds.length > 0) {
-        // Encontrar a próxima etapa na ordem, ou a primeira permitida
         let nextStepInfo = null;
         for (const allowedNextStepId of currentWorkflowStep.allowedNextStepIds) {
             nextStepInfo = workflowSteps.find(ws => ws.stepId === allowedNextStepId);
-            if (nextStepInfo) break; // Pega a primeira etapa permitida
+            if (nextStepInfo) break;
         }
 
         if (nextStepInfo) {
             nextRecipientProfile = nextStepInfo.profileOverride || nextStepInfo.step.defaultProfile;
-            notificationSubject = `Ação Necessária: Solicitação ${request.protocol}`;
-            notificationMessage = `A solicitação ${request.protocol} aguarda a ação do perfil de ${nextRecipientProfile} na etapa "${nextStepInfo.step.name}".`;
+            notificationTitle = `Ação Necessária: Solicitação ${fullRequest.protocol}`;
+            notificationMessage = `A solicitação ${fullRequest.protocol} aguarda a ação do perfil de ${nextRecipientProfile} na etapa "${nextStepInfo.step.name}".`;
         }
     } else {
         // Se não houver próximas etapas definidas (fim do fluxo ou transição aberta), notifica o solicitante
-        const solicitant = await User.findByPk(request.solicitantId);
-        if (solicitant) {
+        if (fullRequest.solicitant) {
              await notificationService.sendNotification({
-                recipient: solicitant.email,
-                subject: `Sua solicitação ${request.protocol} foi atualizada`,
-                message: `O status da sua solicitação ${request.protocol} foi atualizado para "${currentStep.name}".`
+                recipientId: fullRequest.solicitant.id,
+                title: `Sua solicitação ${fullRequest.protocol} foi atualizada`,
+                message: `O status da sua solicitação ${fullRequest.protocol} foi atualizado para "${currentStep.name}".`,
+                link: notificationLink
             });
         }
         return; // Nenhuma outra notificação para perfil específico
     }
+
+    // Notificar o solicitante sobre a atualização do status (mesmo que a próxima ação seja de outro perfil)
+    if (fullRequest.solicitant && fullRequest.solicitant.id !== responsibleUserId) { // Não notificar o próprio responsável duas vezes pela mesma ação
+         await notificationService.sendNotification({
+            recipientId: fullRequest.solicitant.id,
+            title: `Sua solicitação ${fullRequest.protocol} foi atualizada`,
+            message: `O status da sua solicitação ${fullRequest.protocol} foi atualizado para "${currentStep.name}".`,
+            link: notificationLink
+        });
+    }
+
 
     if (nextRecipientProfile) {
         const recipients = await User.findAll({
@@ -176,43 +198,71 @@ const sendNotificationForNextStep = async (request, currentStep, responsibleId, 
             include: nextRecipientProfile === 'GESTAO' || nextRecipientProfile === 'SOLICITANTE' ? [{
                 model: Company,
                 as: 'companies',
-                where: { id: request.companyId },
+                where: { id: fullRequest.companyId },
                 attributes: []
             }] : []
         });
 
         for (const recipientUser of recipients) {
-            await notificationService.sendNotification({
-                recipient: recipientUser.email,
-                subject: notificationSubject,
-                message: notificationMessage
-            });
+            if (recipientUser.id !== responsibleUserId) { // Não notificar o próprio responsável pela ação
+                 await notificationService.sendNotification({
+                    recipientId: recipientUser.id,
+                    title: notificationTitle,
+                    message: notificationMessage,
+                    link: notificationLink
+                });
+            }
         }
     }
 };
 
 /**
  * Busca todas as solicitações com base no perfil do usuário e filtros.
- * @param {object} filters - Opções de filtro.
+ * @param {object} filters - Opções de filtro (status, workflowName, companyId, protocol, contractId, startDate, endDate, page, limit).
  * @param {object} userInfo - Informações do usuário logado.
  * @returns {Promise<object>} Lista de solicitações e metadados de paginação.
  */
 const findAllRequests = async (filters, userInfo) => {
-  const { status, workflowName, companyId, protocol, page = 1, limit = 10 } = filters; // Alterado 'type' para 'workflowName'
+  const { status, workflowName, companyId, protocol, contractId, startDate, endDate, page = 1, limit = 10 } = filters;
   const { id: userId, profile } = userInfo;
   const where = {};
+  const companyWhere = {};
+  const contractWhere = {};
 
+  // Filtro por solicitante ou empresas associadas para GESTAO
   if (profile === 'SOLICITANTE') {
     where.solicitantId = userId;
   } else if (profile === 'GESTAO') {
     const userCompanies = await UserCompany.findAll({ where: { userId }, attributes: ['companyId'] });
-    const companyIds = userCompanies.map(uc => uc.companyId);
-    where.companyId = { [Op.in]: companyIds };
+    const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
+    companyWhere.id = { [Op.in]: allowedCompanyIds };
   }
 
+  // Filtros gerais da requisição
   if (status) where.status = status;
   if (protocol) where.protocol = { [Op.iLike]: `%${protocol}%` };
-  if (companyId) where.companyId = companyId;
+  if (contractId) where.contractId = contractId; // Novo filtro por contractId
+
+  // Filtro por CompanyId (cliente)
+  if (companyId) {
+    if (companyWhere.id && companyWhere.id[Op.in]) {
+      // Se já existe filtro de empresa para GESTAO, garante que o companyId solicitado esteja na lista
+      if (!companyWhere.id[Op.in].includes(companyId)) {
+        companyWhere.id = { [Op.in]: [] }; // Se não estiver, não retorna nada
+      } else {
+        companyWhere.id = companyId; // Sobrescreve para filtrar o ID específico
+      }
+    } else {
+      companyWhere.id = companyId;
+    }
+  }
+
+  // Filtro por período de data (createdAt)
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt[Op.gte] = new Date(startDate);
+    if (endDate) where.createdAt[Op.lte] = new Date(endDate);
+  }
 
   let workflowWhere = {};
   if (workflowName) {
@@ -220,17 +270,31 @@ const findAllRequests = async (filters, userInfo) => {
   }
 
   const offset = (page - 1) * limit;
+
   const { count, rows } = await Request.findAndCountAll({
     where,
     limit,
     offset,
     order: [['createdAt', 'DESC']],
     include: [
-      { model: Company, as: 'company', attributes: ['id', 'tradeName'] },
+      {
+        model: Company,
+        as: 'company',
+        attributes: ['id', 'tradeName'],
+        where: companyWhere,
+        required: !!(Object.keys(companyWhere).length > 0) // Força o JOIN se houver filtro de empresa
+      },
+      {
+        model: Contract,
+        as: 'contract',
+        attributes: ['id', 'name'],
+        where: contractWhere, // Aplica filtro de contrato, se houver
+        required: !!contractId // Força o JOIN se houver filtro por contractId
+      },
       { model: User, as: 'solicitant', attributes: ['id', 'name'] },
       { model: Position, as: 'position', attributes: ['id', 'name'] },
       { model: Employee, as: 'employee', attributes: ['id', 'name'] },
-      { model: Workflow, as: 'workflow', attributes: ['id', 'name'], where: workflowWhere, required: !!workflowName }, // NOVO
+      { model: Workflow, as: 'workflow', attributes: ['id', 'name'], where: workflowWhere, required: !!workflowName },
     ]
   });
   return { total: count, requests: rows, page, limit };
@@ -250,7 +314,7 @@ const findRequestById = async (requestId, userInfo) => {
       { model: Employee, as: 'employee' },
       { model: User, as: 'solicitant', attributes: { exclude: ['password'] } },
       { model: RequestStatusLog, as: 'statusHistory', include: [{ model: User, as: 'responsible', attributes: ['id', 'name', 'profile'] }], order: [['createdAt', 'ASC']] },
-      { model: Workflow, as: 'workflow', attributes: ['id', 'name'] }, // NOVO
+      { model: Workflow, as: 'workflow', attributes: ['id', 'name'] },
     ]
   });
 
@@ -406,9 +470,10 @@ const requestCancellation = async (requestId, solicitantId, reason) => {
     });
     for (const manager of managers) {
         await notificationService.sendNotification({
-            recipient: manager.email,
-            subject: `Pedido de Cancelamento: Solicitação ${request.protocol}`,
-            message: `O cliente ${company.tradeName} solicitou o cancelamento da requisição ${request.protocol}. Sua aprovação é necessária.`
+            recipientId: manager.id, // <-- ATUALIZADO para ID do usuário
+            title: `Pedido de Cancelamento: Solicitação ${request.protocol}`,
+            message: `O cliente ${company.tradeName} solicitou o cancelamento da requisição ${request.protocol}. Sua aprovação é necessária.`,
+            link: `/requests/${request.id}`
         });
     }
 
@@ -466,9 +531,10 @@ const resolveCancellation = async (requestId, managerId, approved, notes) => {
     
     // Notificar o solicitante sobre a decisão
     await notificationService.sendNotification({
-        recipient: request.solicitant.email,
-        subject: `Seu pedido de cancelamento para ${request.protocol} foi resolvido`,
-        message: `A gestão ${approved ? 'APROVOU' : 'NEGOU'} seu pedido de cancelamento. A solicitação agora está com o status: ${newStatusName}.`
+        recipientId: request.solicitant.id, // <-- ATUALIZADO para ID do usuário
+        title: `Seu pedido de cancelamento para ${request.protocol} foi resolvido`,
+        message: `A gestão ${approved ? 'APROVOU' : 'NEGOU'} seu pedido de cancelamento. A solicitação agora está com o status: ${newStatusName}.`,
+        link: `/requests/${request.id}`
     });
 
     return updatedRequest;
@@ -477,25 +543,49 @@ const resolveCancellation = async (requestId, managerId, approved, notes) => {
 
 /**
  * Busca TODAS as solicitações que correspondem aos filtros e perfil, sem paginação.
- * @param {object} filters - Opções de filtro.
+ * @param {object} filters - Opções de filtro (status, workflowName, companyId, protocol, contractId, startDate, endDate).
  * @param {object} userInfo - Informações do usuário.
  * @returns {Promise<Array<Request>>}
  */
 const exportAllRequests = async (filters, userInfo) => {
-    const { status, workflowName, companyId, protocol } = filters; // Alterado 'type' para 'workflowName'
+    const { status, workflowName, companyId, protocol, contractId, startDate, endDate } = filters;
     const { id: userId, profile } = userInfo;
     const where = {};
+    const companyWhere = {};
+    const contractWhere = {};
   
-    if (profile === 'SOLICITANTE') where.solicitantId = userId;
-    else if (profile === 'GESTAO') {
+    if (profile === 'SOLICITANTE') {
+      where.solicitantId = userId;
+    } else if (profile === 'GESTAO') {
       const userCompanies = await UserCompany.findAll({ where: { userId }, attributes: ['companyId'] });
-      where.companyId = { [Op.in]: userCompanies.map(uc => uc.companyId) };
+      const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
+      companyWhere.id = { [Op.in]: allowedCompanyIds };
     }
   
     if (status) where.status = status;
     if (protocol) where.protocol = { [Op.iLike]: `%${protocol}%` };
-    if (companyId) where.companyId = companyId;
+    if (contractId) where.contractId = contractId;
 
+    // Filtro por CompanyId (cliente)
+    if (companyId) {
+        if (companyWhere.id && companyWhere.id[Op.in]) {
+            if (!companyWhere.id[Op.in].includes(companyId)) {
+                companyWhere.id = { [Op.in]: [] };
+            } else {
+                companyWhere.id = companyId;
+            }
+        } else {
+            companyWhere.id = companyId;
+        }
+    }
+
+    // Filtro por período de data (createdAt)
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt[Op.gte] = new Date(startDate);
+      if (endDate) where.createdAt[Op.lte] = new Date(endDate);
+    }
+  
     let workflowWhere = {};
     if (workflowName) {
         workflowWhere.name = { [Op.iLike]: `%${workflowName}%` };
@@ -505,11 +595,24 @@ const exportAllRequests = async (filters, userInfo) => {
         where,
         order: [['createdAt', 'DESC']],
         include: [
-            { model: Company, as: 'company', attributes: ['tradeName'] },
+            {
+              model: Company,
+              as: 'company',
+              attributes: ['tradeName'],
+              where: companyWhere,
+              required: !!(Object.keys(companyWhere).length > 0)
+            },
+            {
+              model: Contract,
+              as: 'contract',
+              attributes: ['name'],
+              where: contractWhere,
+              required: !!contractId
+            },
             { model: User, as: 'solicitant', attributes: ['name'] },
             { model: Position, as: 'position', attributes: ['name'] },
             { model: Employee, as: 'employee', attributes: ['name'] },
-            { model: Workflow, as: 'workflow', attributes: ['name'], where: workflowWhere, required: !!workflowName }, // NOVO
+            { model: Workflow, as: 'workflow', attributes: ['name'], where: workflowWhere, required: !!workflowName },
         ]
     });
     return requests;
@@ -518,10 +621,10 @@ const exportAllRequests = async (filters, userInfo) => {
 
 module.exports = {
   generateProtocol,
-  createRequest, // FUNÇÃO GENÉRICA AGORA
+  createRequest,
   findAllRequests,
   findRequestById,
-  updateRequestStatus, // FUNÇÃO GENÉRICA AGORA
+  updateRequestStatus,
   requestCancellation, 
   resolveCancellation,
   exportAllRequests

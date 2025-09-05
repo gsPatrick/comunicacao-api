@@ -10,13 +10,14 @@ const requestRouter = require('../features/Request/request.routes');
 const associationRouter = require('../features/Association/association.routes');
 const dashboardRoutes = require('../features/Dashboard/dashboard.routes');
 const stepRouter = require('../features/Steps/steps.routes');
-const workflowRouter = require('../features/Workflow/workflow.routes');
-const reportsRouter = require('../features/Reports/reports.routes'); // <-- NOVO
+const workflowRouter = require('../features/Workflows/workflow.routes');
+const reportsRouter = require('../features/Reports/reports.routes');
+const notificationRouter = require('../features/Notifications/notification.routes'); // <-- NOVO
+const settingsRouter = require('../features/Settings/settings.routes'); // <-- NOVO
 
 const router = express.Router();
 
 // Agrupa todas as rotas da aplicação sob seus respectivos prefixos.
-// Isso mantém o código organizado e facilita o versionamento da API no futuro.
 
 // Rotas de Autenticação (públicas)
 router.use('/auth', authRouter);
@@ -36,7 +37,11 @@ router.use('/steps', stepRouter);
 router.use('/workflows', workflowRouter);
 
 // Rotas de Relatórios (protegidas)
-router.use('/reports', reportsRouter); // <-- NOVO
+router.use('/reports', reportsRouter);
+
+// Rotas de Notificações (protegidas)
+router.use('/notifications', notificationRouter); // <-- NOVO
+router.use('/settings', settingsRouter); // <-- NOVO
 
 // Rotas de Processos (protegidas)
 router.use('/requests', requestRouter);

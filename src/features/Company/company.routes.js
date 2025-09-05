@@ -5,18 +5,54 @@ const authorizeMiddleware = require('../../middlewares/authorize.middleware');
 
 const router = express.Router();
 
-// Aplica os middlewares para todas as rotas de empresa.
-router.use(authMiddleware, authorizeMiddleware(['ADMIN', 'RH']));
+// --- PERMISSÕES AJUSTADAS POR ROTA ---
 
-// Rotas de CRUD para Empresas
-router.post('/', companyController.createCompany);
-router.get('/', companyController.getAllCompanies);
+// Rota para CRIAR: ADMIN, RH e GESTAO podem criar.
+router.post(
+    '/',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
+    companyController.createCompany
+);
 
-// Adicione a nova rota de exportação aqui
-router.get('/export', companyController.exportCompanies);
+// Rota para LISTAR: ADMIN, RH e GESTAO podem listar (o service já filtra os dados para a GESTAO).
+router.get(
+    '/',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
+    companyController.getAllCompanies
+);
 
-router.get('/:id', companyController.getCompanyById);
-router.put('/:id', companyController.updateCompany);
-router.delete('/:id', companyController.deleteCompany);
+// Rota de EXPORTAÇÃO: ADMIN, RH e GESTAO podem exportar.
+router.get(
+    '/export',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
+    companyController.exportCompanies
+);
+
+// Rota para DETALHES: ADMIN, RH e GESTAO podem ver detalhes.
+router.get(
+    '/:id',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
+    companyController.getCompanyById
+);
+
+// Rota para ATUALIZAR: Apenas ADMIN e RH podem editar.
+router.put(
+    '/:id',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH']),
+    companyController.updateCompany
+);
+
+// Rota para DELETAR: Apenas ADMIN e RH podem deletar.
+router.delete(
+    '/:id',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH']),
+    companyController.deleteCompany
+);
 
 module.exports = router;

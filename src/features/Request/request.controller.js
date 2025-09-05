@@ -20,14 +20,14 @@ const createAdmissionRequest = async (req, res) => {
 const createResignationRequest = async (req, res) => {
   try {
     const solicitantId = req.userId;
-    // Assume que o corpo da requisição pode conter um campo 'type' para diferenciar Desligamento/Substituição
+    // Assume que o corpo da requisição pode conter um campo 'workflowName' para diferenciar Desligamento/Substituição
     // OU que teremos rotas separadas se o fluxo for muito diferente.
     // Pelo PDF, 'DESLIGAMENTO' e 'SUBSTITUICAO' são fluxos distintos.
-    const workflowName = req.body.workflowName || 'DESLIGAMENTO'; // Ou 'SUBSTITUICAO' conforme o caso
-    if (!['DESLIGAMENTO', 'SUBSTITUICAO'].includes(workflowName.toUpperCase())) {
+    const workflowName = req.body.workflowName ? req.body.workflowName.toUpperCase() : 'DESLIGAMENTO'; // Padrão DESLIGAMENTO
+    if (!['DESLIGAMENTO', 'SUBSTITUICAO'].includes(workflowName)) {
       return res.status(400).json({ error: 'Invalid workflowName for resignation/substitution request.' });
     }
-    const request = await requestService.createRequest(workflowName.toUpperCase(), req.body, solicitantId);
+    const request = await requestService.createRequest(workflowName, req.body, solicitantId);
     return res.status(201).json(request);
   } catch (error) {
     if (error.message.startsWith('Permission Denied')) return res.status(403).json({ error: error.message });
@@ -40,7 +40,7 @@ const createResignationRequest = async (req, res) => {
 const getAllRequests = async (req, res) => {
   try {
     const userInfo = { id: req.userId, profile: req.userProfile };
-    const requestsData = await requestService.findAllRequests(req.query, userInfo);
+    const requestsData = await requestService.findAllRequests(req.query, userInfo); // Passa req.query e userInfo
     return res.status(200).json(requestsData);
   } catch (error) {
     return res.status(500).json({ error: 'Internal server error', details: error.message });
@@ -131,13 +131,14 @@ const resolveCancellation = async (req, res) => {
 const exportRequests = async (req, res) => {
     try {
         const userInfo = { id: req.userId, profile: req.userProfile };
-        const requests = await requestService.exportAllRequests(req.query, userInfo);
+        const requests = await requestService.exportAllRequests(req.query, userInfo); // Passa req.query e userInfo
 
         const formattedData = requests.map(req => ({
             'Protocolo': req.protocol,
             'Tipo de Workflow': req.workflow ? req.workflow.name : '', // Agora é workflow.name
             'Status': req.status,
             'Empresa Cliente': req.company ? req.company.tradeName : '',
+            'Contrato': req.contract ? req.contract.name : '', // NOVO CAMPO
             'Solicitante': req.solicitant ? req.solicitant.name : '',
             'Data Criação': req.createdAt,
             'Nome Candidato/Funcionário': req.candidateName || (req.employee ? req.employee.name : ''),
@@ -161,7 +162,7 @@ module.exports = {
   createResignationRequest,
   getAllRequests,
   getRequestById,
-  updateRequestStatus, // FUNÇÃO GENÉRICA AGORA
+  updateRequestStatus,
   requestCancellation, 
   resolveCancellation,
   exportRequests

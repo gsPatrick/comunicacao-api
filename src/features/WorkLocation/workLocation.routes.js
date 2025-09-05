@@ -5,13 +5,46 @@ const authorizeMiddleware = require('../../middlewares/authorize.middleware');
 
 const router = express.Router();
 
-// Protege todas as rotas de locais de trabalho, permitindo acesso apenas a ADMIN e RH.
-router.use(authMiddleware, authorizeMiddleware(['ADMIN', 'RH']));
+// --- PERMISSÕES AJUSTADAS POR ROTA ---
 
-router.post('/', workLocationController.createWorkLocation);
-router.get('/', workLocationController.getAllWorkLocations);
-router.get('/:id', workLocationController.getWorkLocationById);
-router.put('/:id', workLocationController.updateWorkLocation);
-router.delete('/:id', workLocationController.deleteWorkLocation);
+// Rota para CRIAR: ADMIN, RH e GESTAO podem criar.
+router.post(
+    '/',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
+    workLocationController.createWorkLocation
+);
+
+// Rota para LISTAR: ADMIN, RH e GESTAO podem listar.
+router.get(
+    '/',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
+    workLocationController.getAllWorkLocations
+);
+
+// Rota para DETALHES: ADMIN, RH e GESTAO podem ver detalhes.
+router.get(
+    '/:id',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
+    workLocationController.getWorkLocationById
+);
+
+// Rota para ATUALIZAR: Apenas ADMIN e RH podem editar.
+router.put(
+    '/:id',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH']),
+    workLocationController.updateWorkLocation
+);
+
+// Rota para DELETAR: Apenas ADMIN e RH podem deletar.
+router.delete(
+    '/:id',
+    authMiddleware,
+    authorizeMiddleware(['ADMIN', 'RH']),
+    workLocationController.deleteWorkLocation
+);
 
 module.exports = router;
