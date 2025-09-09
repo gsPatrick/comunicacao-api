@@ -85,11 +85,13 @@ const seedFromExcel = async ({ transaction }) => {
 
     // Normaliza os dados para usar nomes consistentes
     data = data.map(row => ({
-      Contrato: row.Contrato || row.contrato || row.CONTRATO,
-      Categoria: row.Categoria || row.categoria || row.CATEGORIA,
-      Loc_Trabalho: row.Loc_Trabalho || row.loc_trabalho || row['Loc_Trabalho'] || row.LOC_TRABALHO,
-      TipoEmpresa: row.TipoEmpresa || row.tipoEmpresa || row.TIPOEMPRESA || row['TipoEmpresa']
+      Contrato: getColumnValue(row, ['Contrato', 'contrato', 'CONTRATO']),
+      Categoria: getColumnValue(row, ['Categoria', 'categoria', 'CATEGORIA']),
+      Loc_Trabalho: getColumnValue(row, ['Loc_Trabalho', 'loc_trabalho', 'LOC_TRABALHO', 'Loc_trabalho', 'Loc Trabalho']),
+      TipoEmpresa: getColumnValue(row, ['TipoEmpresa', 'tipoEmpresa', 'TIPOEMPRESA', 'TipoEmpresa', 'Tipo_Empresa', 'Tipo Empresa'])
     }));
+
+    console.log('Dados normalizados (primeiros 3):', JSON.stringify(data.slice(0, 3), null, 2));
 
     // Cria empresas baseadas na primeira palavra do contrato
     const companyNames = new Set();
