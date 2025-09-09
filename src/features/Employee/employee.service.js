@@ -31,8 +31,9 @@ const createEmployee = async (employeeData) => {
  * @param {object} userInfo - Informações do usuário logado ({ id, profile }).
  * @returns {Promise<{total: number, employees: Array<Employee>, page: number, limit: number}>}
  */
+// --- FUNÇÃO MODIFICADA ---
 const findAllEmployees = async (filters, userInfo) => {
-  const { name, cpf, registration, contractId, workLocationId, page = 1, limit = 10 } = filters;
+  const { name, cpf, registration, contractId, workLocationId, page = 1, limit = 10, all = false } = filters; // Adicionado 'all'
   const { id: userId, profile } = userInfo;
   const where = {};
 
@@ -42,40 +43,31 @@ const findAllEmployees = async (filters, userInfo) => {
   if (contractId) where.contractId = contractId;
   if (workLocationId) where.workLocationId = workLocationId;
 
-  // Se o usuário for GESTAO ou SOLICITANTE, ele só pode ver funcionários das empresas a que tem acesso
   if (profile === 'GESTAO' || profile === 'SOLICITANTE') {
-    const userCompanies = await UserCompany.findAll({
-        where: { userId },
-        attributes: ['companyId']
-    });
+    const userCompanies = await UserCompany.findAll({ where: { userId }, attributes: ['companyId'] });
     const companyIds = userCompanies.map(uc => uc.companyId);
-
-    // Encontra todos os contratos ligados a essas empresas
-    const accessibleContracts = await Contract.findAll({
-        where: { companyId: { [Op.in]: companyIds } },
-        attributes: ['id']
-    });
+    const accessibleContracts = await Contract.findAll({ where: { companyId: { [Op.in]: companyIds } }, attributes: ['id'] });
     const accessibleContractIds = accessibleContracts.map(c => c.id);
-    
-    // Adiciona a cláusula de filtro principal: o funcionário deve pertencer a um desses contratos
     where.contractId = { [Op.in]: accessibleContractIds };
   }
-
-  const offset = (page - 1) * limit;
-
-  const { count, rows } = await Employee.findAndCountAll({
+  
+  const queryOptions = {
     where,
-    limit,
-    offset,
     order: [['name', 'ASC']],
     include: [
       { model: Position, as: 'position', attributes: ['id', 'name'] },
       { model: WorkLocation, as: 'workLocation', attributes: ['id', 'name'] },
       { model: Contract, as: 'contract', attributes: ['id', 'name'] },
     ]
-  });
+  };
 
-  return { total: count, employees: rows, page, limit };
+  if (!all) {
+    queryOptions.limit = parseInt(limit, 10);
+    queryOptions.offset = (parseInt(page, 10) - 1) * queryOptions.limit;
+  }
+
+  const { count, rows } = await Employee.findAndCountAll(queryOptions);
+  return { total: count, employees: rows, page: all ? 1 : page, limit: all ? count : limit };
 };
 
 /**
