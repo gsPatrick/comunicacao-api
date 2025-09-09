@@ -5,230 +5,105 @@ const { Company, Contract, Position, WorkLocation, CompanyPosition } = require('
 const filePath = path.join(__dirname, '../scripts/database_structure.xlsx');
 
 const seedFromExcel = async ({ transaction }) => {
-  console.log('Iniciando seeding da estrutura a partir do Excel (Versão Final Robusta)...');
+  console.log('Iniciando seeding da estrutura a partir do Excel (Lógica de Relacionamento Completa)...');
 
-  try {
-    const workbook = xlsx.readFile(filePath);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    
-    console.log(`- Processando planilha: ${sheetName}`);
-    console.log(`- Range da planilha: ${worksheet['!ref']}`);
-    
-    // Lê usando método robusto: pega arrays de cada linha
-    const rows = xlsx.utils.sheet_to_json(worksheet, { 
-      header: 1, // Usa índices numéricos como headers (0, 1, 2, 3...)
-      range: 2,  // Pula as 2 primeiras linhas (título e header)
-      defval: null, // Valor padrão para células vazias
-      raw: false // Converte valores para string
-    });
+  const workbook = xlsx.readFile(filePath);
+  const sheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[sheetName];
+  
+  const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1, range: 2 });
 
-    console.log(`- Total de linhas brutas lidas: ${rows.length}`);
+  const data = rows.map(row => ({
+    Contrato: row[0],
+    Categoria: row[1],
+    Loc_Trabalho: row[2],
+  })).filter(row => row.Contrato && row.Categoria && row.Loc_Trabalho);
 
-    // Processa e limpa os dados
-    const data = rows
-      .map((row, index) => {
-        if (!row || row.length < 3) return null;
-        
-        const item = {
-          Contrato: row[0] ? String(row[0]).trim() : null,
-          Categoria: row[1] ? String(row[1]).trim() : null,
-          Loc_Trabalho: row[2] ? String(row[2]).trim() : null,
-          TipoEmpresa: row[3] ? String(row[3]).trim() : null,
-          _linha: index + 3 // Para debug (linha real no Excel)
-        };
-
-        // Log a cada 1000 registros para acompanhar progresso
-        if (index > 0 && index % 1000 === 0) {
-          console.log(`  - Processando linha ${index}...`);
-        }
-
-        return item;
-      })
-      .filter((row, index) => {
-        if (!row) return false;
-        
-        const isValid = row.Contrato && row.Categoria && row.Loc_Trabalho;
-        
-        if (!isValid && index < 10) {
-          // Log apenas das primeiras 10 linhas inválidas para debug
-          console.log(`  - Linha ${row._linha} rejeitada:`, {
-            contrato: row.Contrato || 'VAZIO',
-            categoria: row.Categoria || 'VAZIO',
-            locTrabalho: row.Loc_Trabalho || 'VAZIO'
-          });
-        }
-        
-        return isValid;
-      });
-
-    console.log(`- Registros válidos após limpeza: ${data.length}`);
-    
-    if (data.length === 0) {
-      console.warn('- ERRO: Nenhum dado válido encontrado!');
+  console.log(`- Encontrados ${data.length} registros válidos de relacionamento na planilha.`);
+  if (data.length === 0) {
+      console.warn('- AVISO: Nenhum dado válido encontrado para popular o banco.');
       return;
-    }
+  }
 
-    // Mostra amostra dos dados processados
-    console.log('- Amostra dos primeiros 3 registros:', JSON.stringify(data.slice(0, 3).map(r => ({
-      Contrato: r.Contrato,
-      Categoria: r.Categoria,
-      Loc_Trabalho: r.Loc_Trabalho
-    })), null, 2));
+  // ETAPA 1: Criar as entidades únicas (sem repetição)
+  // ===================================================
 
-    // 1. EMPRESAS - extrai nomes únicos das empresas
-    console.log('\n=== PROCESSANDO EMPRESAS ===');
-    const companyNames = new Set();
-    data.forEach(row => {
-      const companyName = row.Contrato.split(' ')[0];
-      if (companyName && companyName.length > 1) {
-        companyNames.add(companyName);
-      }
-    });
-
-    const companiesToCreate = Array.from(companyNames).map(name => ({
+  // Clientes (Companies)
+  const companyNames = new Set(data.map(row => row.Contrato.split(' ')[0]));
+  const companiesToCreate = Array.from(companyNames).map(name => ({
       corporateName: name,
       tradeName: name,
-      cnpj: `${String(Math.floor(10 + Math.random() * 90)).padStart(2, '0')}.${String(Math.floor(100 + Math.random() * 900)).padStart(3, '0')}.${String(Math.floor(100 + Math.random() * 900)).padStart(3, '0')}/0001-${String(Math.floor(10 + Math.random() * 90)).padStart(2, '0')}`,
-    }));
+      cnpj: `${Math.floor(10 + Math.random() * 90)}.${Math.floor(100 + Math.random() * 900)}.${Math.floor(100 + Math.random() * 900)}/0001-${Math.floor(10 + Math.random() * 90)}`,
+  }));
+  await Company.bulkCreate(companiesToCreate, { ignoreDuplicates: true, transaction });
+  console.log(`- ${companiesToCreate.length} Clientes (Companies) únicos inseridos/verificados.`);
 
-    await Company.bulkCreate(companiesToCreate, { 
-      ignoreDuplicates: true, 
-      transaction,
-      validate: true
-    });
-    console.log(`- ${companiesToCreate.length} empresas únicas inseridas/verificadas.`);
+  // Categorias (Positions)
+  const positionNames = new Set(data.map(row => row.Categoria));
+  const positionsToCreate = Array.from(positionNames).map(name => ({ name }));
+  await Position.bulkCreate(positionsToCreate, { ignoreDuplicates: true, transaction });
+  console.log(`- ${positionsToCreate.length} Categorias (Positions) únicas inseridas/verificadas.`);
+  
+  // Contratos
+  const uniqueContractsMap = new Map();
+  const allCompanies = await Company.findAll({ transaction });
+  const companyMap = new Map(allCompanies.map(c => [c.corporateName, c.id]));
 
-    // 2. POSIÇÕES - extrai categorias únicas
-    console.log('\n=== PROCESSANDO POSIÇÕES ===');
-    const positionNames = new Set(data.map(row => row.Categoria));
-    const positionsToCreate = Array.from(positionNames).map(name => ({ 
-      name,
-      description: `Posição: ${name}`
-    }));
-    
-    await Position.bulkCreate(positionsToCreate, { 
-      ignoreDuplicates: true, 
-      transaction,
-      validate: true
-    });
-    console.log(`- ${positionsToCreate.length} posições únicas inseridas/verificadas.`);
-    
-    // 3. Busca dados criados para relacionamentos
-    console.log('\n=== CRIANDO MAPEAMENTOS ===');
-    const allCompanies = await Company.findAll({ transaction });
-    const allPositions = await Position.findAll({ transaction });
-    const companyMap = new Map(allCompanies.map(c => [c.corporateName, c.id]));
-    const positionMap = new Map(allPositions.map(p => [p.name, p.id]));
-    
-    console.log(`- ${allCompanies.length} empresas mapeadas`);
-    console.log(`- ${allPositions.length} posições mapeadas`);
-
-    // 4. CONTRATOS - cria contratos únicos
-    console.log('\n=== PROCESSANDO CONTRATOS ===');
-    const uniqueContracts = new Map();
-    let contractsProcessed = 0;
-    
-    data.forEach(row => {
+  data.forEach(row => {
       const companyName = row.Contrato.split(' ')[0];
       const companyId = companyMap.get(companyName);
-      
-      if (companyId && !uniqueContracts.has(row.Contrato)) {
-        uniqueContracts.set(row.Contrato, { 
-          name: row.Contrato, 
-          contractNumber: row.Contrato, 
-          companyId 
-        });
-        contractsProcessed++;
+      if (companyId && !uniqueContractsMap.has(row.Contrato)) {
+          uniqueContractsMap.set(row.Contrato, { name: row.Contrato, contractNumber: row.Contrato, companyId });
       }
-    });
+  });
+  await Contract.bulkCreate(Array.from(uniqueContractsMap.values()), { ignoreDuplicates: true, transaction });
+  console.log(`- ${uniqueContractsMap.size} Contratos únicos inseridos/verificados.`);
 
-    const contractsArray = Array.from(uniqueContracts.values());
-    await Contract.bulkCreate(contractsArray, { 
-      ignoreDuplicates: true, 
-      transaction,
-      validate: true
-    });
-    console.log(`- ${contractsArray.length} contratos únicos inseridos/verificados.`);
+  // ETAPA 2: Criar as associações baseadas em TODAS as linhas
+  // =========================================================
 
-    // 5. LOCAIS DE TRABALHO
-    console.log('\n=== PROCESSANDO LOCAIS DE TRABALHO ===');
-    const allContracts = await Contract.findAll({ transaction });
-    const contractMap = new Map(allContracts.map(c => [c.name, c.id]));
-    
-    const uniqueWorkLocations = new Map();
-    let locationsProcessed = 0;
-    
-    data.forEach(row => {
+  // Mapeia todos os nomes para IDs para fácil acesso
+  const allPositions = await Position.findAll({ transaction });
+  const allContracts = await Contract.findAll({ transaction });
+  const positionMap = new Map(allPositions.map(p => [p.name, p.id]));
+  const contractMap = new Map(allContracts.map(c => [c.name, c.id]));
+
+  // Locais de Trabalho (WorkLocations)
+  const workLocationsToCreate = [];
+  const uniqueWorkLocations = new Set();
+  data.forEach(row => {
       const contractId = contractMap.get(row.Contrato);
       const locationName = row.Loc_Trabalho;
       const uniqueKey = `${contractId}::${locationName}`;
       
+      // Adiciona apenas se a combinação contrato-local for nova
       if (contractId && locationName && !uniqueWorkLocations.has(uniqueKey)) {
-        uniqueWorkLocations.set(uniqueKey, { 
-          name: locationName, 
-          contractId 
-        });
-        locationsProcessed++;
+          workLocationsToCreate.push({ name: locationName, contractId });
+          uniqueWorkLocations.add(uniqueKey);
       }
-    });
+  });
+  await WorkLocation.bulkCreate(workLocationsToCreate, { ignoreDuplicates: true, transaction });
+  console.log(`- ${workLocationsToCreate.length} Locais de Trabalho únicos inseridos.`);
 
-    const locationsArray = Array.from(uniqueWorkLocations.values());
-    await WorkLocation.bulkCreate(locationsArray, { 
-      ignoreDuplicates: true, 
-      transaction,
-      validate: true
-    });
-    console.log(`- ${locationsArray.length} locais de trabalho únicos inseridos/verificados.`);
-
-    // 6. ASSOCIAÇÕES EMPRESA-POSIÇÃO
-    console.log('\n=== PROCESSANDO ASSOCIAÇÕES EMPRESA-POSIÇÃO ===');
-    const uniqueCompanyPosition = new Set();
-    let associationsProcessed = 0;
-    
-    data.forEach(row => {
+  // Associações Cliente-Categoria (CompanyPosition)
+  const companyPositionToCreate = [];
+  const uniqueCompanyPosition = new Set();
+  data.forEach(row => {
       const companyId = companyMap.get(row.Contrato.split(' ')[0]);
       const positionId = positionMap.get(row.Categoria);
-      
-      if (companyId && positionId) {
-        const key = `${companyId}::${positionId}`;
-        if (!uniqueCompanyPosition.has(key)) {
-          uniqueCompanyPosition.add(key);
-          associationsProcessed++;
-        }
+      const uniqueKey = `${companyId}::${positionId}`;
+
+      // Adiciona apenas se a combinação empresa-categoria for nova
+      if (companyId && positionId && !uniqueCompanyPosition.has(uniqueKey)) {
+          companyPositionToCreate.push({ companyId, positionId });
+          uniqueCompanyPosition.add(uniqueKey);
       }
-    });
+  });
+  
+  await CompanyPosition.bulkCreate(companyPositionToCreate, { ignoreDuplicates: true, transaction });
+  console.log(`- ${companyPositionToCreate.length} associações Cliente-Categoria únicas criadas.`);
 
-    const companyPositionToCreate = Array.from(uniqueCompanyPosition).map(pair => {
-      const [companyId, positionId] = pair.split('::');
-      return { 
-        companyId: parseInt(companyId), 
-        positionId: parseInt(positionId) 
-      };
-    });
-    
-    await CompanyPosition.bulkCreate(companyPositionToCreate, { 
-      ignoreDuplicates: true, 
-      transaction,
-      validate: true
-    });
-    console.log(`- ${companyPositionToCreate.length} associações empresa-posição criadas.`);
-
-    // RESUMO FINAL
-    console.log('\n=== RESUMO FINAL ===');
-    console.log(`✅ Processamento concluído com sucesso!`);
-    console.log(`- ${data.length} registros processados do Excel`);
-    console.log(`- ${companiesToCreate.length} empresas`);
-    console.log(`- ${positionsToCreate.length} posições/categorias`);
-    console.log(`- ${contractsArray.length} contratos`);
-    console.log(`- ${locationsArray.length} locais de trabalho`);
-    console.log(`- ${companyPositionToCreate.length} associações empresa-posição`);
-    
-  } catch (error) {
-    console.error('\n❌ ERRO durante o seeding do Excel:', error.message);
-    console.error('Stack trace:', error.stack);
-    throw error;
-  }
+  console.log('Seeding da estrutura do Excel concluído.');
 };
 
 module.exports = { seedFromExcel };
