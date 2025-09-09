@@ -19,7 +19,12 @@ const seedFromExcel = async ({ transaction }) => {
   // --- CORREÇÃO APLICADA AQUI ---
   // A opção 'range: 1' instrui a biblioteca a ignorar a primeira linha (índice 0)
   // e considerar a segunda linha (índice 1) como o cabeçalho.
-  let data = xlsx.utils.sheet_to_json(worksheet, { range: 1 });
+  let data = xlsx.utils.sheet_to_json(worksheet, {
+  range: 1,
+  header: ["Contrato", "Categoria", "Loc_Trabalho", "TipoEmpresa"],
+  defval: null
+});
+
   // --------------------------------------------------------
 
   data = data.filter(row => row.Contrato && row.Categoria && row.Loc_Trabalho);
