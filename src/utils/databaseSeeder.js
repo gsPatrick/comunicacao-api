@@ -4,13 +4,8 @@ const { Company, Contract, Position, WorkLocation, CompanyPosition } = require('
 
 const filePath = path.join(__dirname, '../scripts/database_structure.xlsx');
 
-/**
- * Função reutilizável para popular o banco com a estrutura do Excel.
- * @param {object} options - Opções, incluindo a transação.
- * @param {import('sequelize').Transaction} options.transaction - A transação do Sequelize.
- */
 const seedFromExcel = async ({ transaction }) => {
-  console.log('Iniciando seeding da estrutura a partir do Excel (Modo Robusto V2)...');
+  console.log('Iniciando seeding da estrutura a partir do Excel (Modo Robusto V3)...');
 
   const workbook = xlsx.readFile(filePath);
   const sheetName = workbook.SheetNames[0];
@@ -26,7 +21,7 @@ const seedFromExcel = async ({ transaction }) => {
 
   console.log(`- Encontrados ${data.length} registros válidos de relacionamento na planilha.`);
   if (data.length === 0) {
-      console.warn('- AVISO: Nenhum dado válido encontrado para popular o banco. Verifique o arquivo Excel.');
+      console.warn('- AVISO: Nenhum dado válido encontrado para popular o banco.');
       return;
   }
 
@@ -81,18 +76,17 @@ const seedFromExcel = async ({ transaction }) => {
       const companyId = companyMap.get(row.Contrato.split(' ')[0]);
       const positionId = positionMap.get(row.Categoria);
       if (companyId && positionId) {
-          uniqueCompanyPosition.add(`${companyId}-${positionId}`);
+          // --- CORREÇÃO APLICADA AQUI: Usa '::' como separador ---
+          uniqueCompanyPosition.add(`${companyId}::${positionId}`);
       }
   });
 
-  // --- CORREÇÃO APLICADA AQUI ---
-  // Removemos o `parseInt` para passar os UUIDs como strings, que é o tipo correto.
   const companyPositionToCreate = Array.from(uniqueCompanyPosition).map(pair => {
-      const [companyId, positionId] = pair.split('-');
-      return { companyId, positionId }; // Passa os valores diretamente como strings
+      // --- E AQUI: Separa usando '::' ---
+      const [companyId, positionId] = pair.split('::');
+      return { companyId, positionId };
   });
-  // --------------------------------
-
+  
   await CompanyPosition.bulkCreate(companyPositionToCreate, { ignoreDuplicates: true, transaction });
   console.log(`- ${companyPositionToCreate.length} associações Cliente-Categoria criadas.`);
 
