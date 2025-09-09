@@ -1,23 +1,94 @@
+const path = require('path');
+const xlsx = require('xlsx');
+const { Company, Contract, Position, WorkLocation, CompanyPosition } = require('../models');
 
-const { sequelize } = require('../models');
-const { seedFromExcel } = require('../utils/databaseSeeder');
+const filePath = path.join(__dirname, '../scripts/database_structure.xlsx');
 
 /**
- * Script runner para popular o banco de dados manualmente via `npm run seed`.
+ * Função reutilizável para popular o banco com a estrutura do Excel.
+ * @param {object} options - Opções, incluindo a transação.
+ * @param {import('sequelize').Transaction} options.transaction - A transação do Sequelize.
  */
-const run = async () => {
-  const transaction = await sequelize.transaction();
-  try {
-    await seedFromExcel({ transaction });
-    await transaction.commit();
-    console.log('\n✅ Seeding manual concluído com sucesso!');
-  } catch (error) {
-    await transaction.rollback();
-    console.error('❌ Ocorreu um erro durante o seeding manual:', error);
-  } finally {
-    await sequelize.close();
-    console.log('Conexão com o banco de dados fechada.');
+const seedFromExcel = async ({ transaction }) => {
+  console.log('Iniciando seeding da estrutura a partir do Excel...');
+
+  const workbook = xlsx.readFile(filePath);
+  const sheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[sheetName];
+  
+  // --- CORREÇÃO APLICADA AQUI ---
+  // A opção 'range: 1' instrui a biblioteca a ignorar a primeira linha (índice 0)
+  // e considerar a segunda linha (índice 1) como o cabeçalho.
+  let data = xlsx.utils.sheet_to_json(worksheet, { range: 1 });
+  // --------------------------------------------------------
+
+  data = data.filter(row => row.Contrato && row.Categoria && row.Loc_Trabalho);
+
+  console.log(`- Encontrados ${data.length} registros válidos de relacionamento na planilha.`);
+  if (data.length === 0) {
+      console.warn('- AVISO: Nenhum dado válido encontrado para popular o banco. Verifique o arquivo Excel.');
+      return; // Interrompe o restante da função se não houver dados
   }
+
+  const companyNames = new Set(data.map(row => row.Contrato.split(' ')[0]));
+  const companiesToCreate = Array.from(companyNames).map(name => ({
+      corporateName: name,
+      tradeName: name,
+      cnpj: `${Math.floor(10 + Math.random() * 90)}.${Math.floor(100 + Math.random() * 900)}.${Math.floor(100 + Math.random() * 900)}/0001-${Math.floor(10 + Math.random() * 90)}`,
+  }));
+  await Company.bulkCreate(companiesToCreate, { ignoreDuplicates: true, transaction });
+  console.log(`- ${companiesToCreate.length} Clientes (Companies) inseridos/verificados.`);
+
+  const positionNames = new Set(data.map(row => row.Categoria));
+  const positionsToCreate = Array.from(positionNames).map(name => ({ name }));
+  await Position.bulkCreate(positionsToCreate, { ignoreDuplicates: true, transaction });
+  console.log(`- ${positionsToCreate.length} Categorias (Positions) inseridas/verificadas.`);
+  
+  const allCompanies = await Company.findAll({ transaction });
+  const allPositions = await Position.findAll({ transaction });
+  const companyMap = new Map(allCompanies.map(c => [c.corporateName, c.id]));
+  const positionMap = new Map(allPositions.map(p => [p.name, p.id]));
+
+  const uniqueContracts = new Map();
+  data.forEach(row => {
+      const companyName = row.Contrato.split(' ')[0];
+      const companyId = companyMap.get(companyName);
+      if (companyId && !uniqueContracts.has(row.Contrato)) {
+          uniqueContracts.set(row.Contrato, { name: row.Contrato, contractNumber: row.Contrato, companyId });
+      }
+  });
+  await Contract.bulkCreate(Array.from(uniqueContracts.values()), { ignoreDuplicates: true, transaction });
+  console.log(`- ${uniqueContracts.size} Contratos inseridos/verificados.`);
+
+  const allContracts = await Contract.findAll({ transaction });
+  const contractMap = new Map(allContracts.map(c => [c.name, c.id]));
+
+  const uniqueWorkLocations = new Map();
+  data.forEach(row => {
+      const contractId = contractMap.get(row.Contrato);
+      const locationName = row.Loc_Trabalho;
+      const uniqueKey = `${contractId}-${locationName}`;
+      if (contractId && locationName && !uniqueWorkLocations.has(uniqueKey)) {
+          uniqueWorkLocations.set(uniqueKey, { name: locationName, contractId });
+      }
+  });
+  await WorkLocation.bulkCreate(Array.from(uniqueWorkLocations.values()), { ignoreDuplicates: true, transaction });
+  console.log(`- ${uniqueWorkLocations.size} Locais de Trabalho inseridos/verificados.`);
+
+  const uniqueCompanyPosition = new Set();
+  data.forEach(row => {
+      const companyId = companyMap.get(row.Contrato.split(' ')[0]);
+      const positionId = positionMap.get(row.Categoria);
+      if (companyId && positionId) uniqueCompanyPosition.add(`${companyId}-${positionId}`);
+  });
+  const companyPositionToCreate = Array.from(uniqueCompanyPosition).map(pair => {
+      const [companyId, positionId] = pair.split('-');
+      return { companyId, positionId };
+  });
+  await CompanyPosition.bulkCreate(companyPositionToCreate, { ignoreDuplicates: true, transaction });
+  console.log(`- ${companyPositionToCreate.length} associações Cliente-Categoria criadas.`);
+
+  console.log('Seeding da estrutura do Excel concluído.');
 };
 
-run();
+module.exports = { seedFromExcel };
