@@ -25,6 +25,8 @@ const seedFromExcel = async ({ transaction }) => {
   defval: null
 });
 
+console.log("Exemplo de dados lidos:", data.slice(0, 5));
+
   // --------------------------------------------------------
 
   data = data.filter(row => row.Contrato && row.Categoria && row.Loc_Trabalho);
