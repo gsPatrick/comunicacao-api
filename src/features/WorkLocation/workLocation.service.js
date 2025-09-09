@@ -23,47 +23,45 @@ const createWorkLocation = async (locationData) => {
  * @returns {Promise<{total: number, workLocations: Array<WorkLocation>, page: number, limit: number}>}
  */
 const findAllWorkLocations = async (filters, userInfo) => {
-  const { contractId, name, page = 1, limit = 10 } = filters;
+  const { contractId, name, page = 1, limit = 10, all = false } = filters;
   const where = {};
-  const companyWhere = {}; // Novo objeto where para a Company
-
+  const companyWhere = {};
   if (contractId) where.contractId = contractId;
   if (name) where.name = { [Op.iLike]: `%${name}%` };
 
-  // Lógica de permissão para GESTAO
   if (userInfo && userInfo.profile === 'GESTAO') {
-    const userCompanies = await UserCompany.findAll({
-      where: { userId: userInfo.id },
-      attributes: ['companyId']
-    });
+    const userCompanies = await UserCompany.findAll({ where: { userId: userInfo.id }, attributes: ['companyId'] });
     const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
-    companyWhere.id = { [Op.in]: allowedCompanyIds }; // Filtra as empresas pelas quais o gestor é responsável
+    companyWhere.id = { [Op.in]: allowedCompanyIds };
   }
 
-  const offset = (page - 1) * limit;
-
-  const { count, rows } = await WorkLocation.findAndCountAll({
+  const queryOptions = {
     where,
     include: [{
       model: Contract,
       as: 'contract',
       attributes: ['id', 'name'],
-      include: [{ // Inclui Company dentro de Contract para aplicar o filtro
+      include: [{
         model: Company,
         as: 'company',
-        attributes: [], // Não precisamos dos atributos da Company diretamente aqui
+        attributes: [],
         where: companyWhere,
         required: !!(Object.keys(companyWhere).length > 0)
       }],
-      required: !!(Object.keys(companyWhere).length > 0) // Garante que o JOIN com Contract e Company ocorra
+      required: !!(Object.keys(companyWhere).length > 0)
     }],
-    limit,
-    offset,
     order: [['name', 'ASC']],
-  });
+  };
 
-  return { total: count, workLocations: rows, page, limit };
+  if (!all) {
+    queryOptions.limit = parseInt(limit, 10);
+    queryOptions.offset = (parseInt(page, 10) - 1) * queryOptions.limit;
+  }
+  
+  const { count, rows } = await WorkLocation.findAndCountAll(queryOptions);
+  return { total: count, workLocations: rows, page: all ? 1 : page, limit: all ? count : limit };
 };
+
 
 /**
  * Busca um local de trabalho pelo seu ID.

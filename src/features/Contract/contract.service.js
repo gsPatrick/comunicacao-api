@@ -23,40 +23,37 @@ const createContract = async (contractData) => {
  * @returns {Promise<{total: number, contracts: Array<Contract>, page: number, limit: number}>}
  */
 const findAllContracts = async (filters, userInfo) => {
-  const { companyId, name, page = 1, limit = 10 } = filters;
+  const { companyId, name, page = 1, limit = 10, all = false } = filters;
   const where = {};
-  const companyWhere = {}; // Novo objeto where para a Company
-
+  const companyWhere = {};
   if (name) where.name = { [Op.iLike]: `%${name}%` };
   if (companyId) where.companyId = companyId;
 
-  // Lógica de permissão para GESTAO
   if (userInfo && userInfo.profile === 'GESTAO') {
-    const userCompanies = await UserCompany.findAll({
-      where: { userId: userInfo.id },
-      attributes: ['companyId']
-    });
+    const userCompanies = await UserCompany.findAll({ where: { userId: userInfo.id }, attributes: ['companyId'] });
     const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
-    companyWhere.id = { [Op.in]: allowedCompanyIds }; // Filtra as empresas pelas quais o gestor é responsável
+    companyWhere.id = { [Op.in]: allowedCompanyIds };
   }
 
-  const offset = (page - 1) * limit;
-
-  const { count, rows } = await Contract.findAndCountAll({
+  const queryOptions = {
     where,
     include: [{
       model: Company,
       as: 'company',
       attributes: ['id', 'tradeName'],
-      where: companyWhere, // Aplica o filtro da empresa aqui
-      required: !!(Object.keys(companyWhere).length > 0) // Força o JOIN se houver filtro de empresa
+      where: companyWhere,
+      required: !!(Object.keys(companyWhere).length > 0)
     }],
-    limit,
-    offset,
     order: [['name', 'ASC']],
-  });
+  };
 
-  return { total: count, contracts: rows, page, limit };
+  if (!all) {
+    queryOptions.limit = parseInt(limit, 10);
+    queryOptions.offset = (parseInt(page, 10) - 1) * queryOptions.limit;
+  }
+  
+  const { count, rows } = await Contract.findAndCountAll(queryOptions);
+  return { total: count, contracts: rows, page: all ? 1 : page, limit: all ? count : limit };
 };
 
 /**

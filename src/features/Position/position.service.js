@@ -17,28 +17,29 @@ const createPosition = async (positionData) => {
  * @returns {Promise<{total: number, positions: Array<Position>, page: number, limit: number}>}
  */
 const findAllPositions = async (filters) => {
-  const { name, page = 1, limit = 10 } = filters;
+  const { name, page = 1, limit = 10, all = false } = filters;
   const where = {};
-
   if (name) where.name = { [Op.iLike]: `%${name}%` };
 
-  const offset = (page - 1) * limit;
-
-  const { count, rows } = await Position.findAndCountAll({
+  const queryOptions = {
     where,
-    limit,
-    offset,
     order: [['name', 'ASC']],
-    distinct: true, // Garante a contagem correta ao usar include
+    distinct: true,
     include: [{
       model: Company,
       as: 'companies',
       attributes: ['id', 'tradeName'],
-      through: { attributes: [] } // Não traz os dados da tabela pivot
+      through: { attributes: [] }
     }]
-  });
+  };
 
-  return { total: count, positions: rows, page, limit };
+  if (!all) {
+    queryOptions.limit = parseInt(limit, 10);
+    queryOptions.offset = (parseInt(page, 10) - 1) * queryOptions.limit;
+  }
+
+  const { count, rows } = await Position.findAndCountAll(queryOptions);
+  return { total: count, positions: rows, page: all ? 1 : page, limit: all ? count : limit };
 };
 
 /**

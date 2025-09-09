@@ -18,32 +18,30 @@ const createCompany = async (companyData) => {
  * @returns {Promise<{total: number, companies: Array<Company>, page: number, limit: number}>}
  */
 const findAllCompanies = async (filters, userInfo) => {
-  const { tradeName, cnpj, page = 1, limit = 10 } = filters;
+  const { tradeName, cnpj, page = 1, limit = 10, all = false } = filters; // Adicionado 'all'
   const where = {};
-
   if (tradeName) where.tradeName = { [Op.iLike]: `%${tradeName}%` };
   if (cnpj) where.cnpj = { [Op.like]: `%${cnpj}%` };
 
-  // Lógica de permissão para GESTAO
   if (userInfo && userInfo.profile === 'GESTAO') {
-    const userCompanies = await UserCompany.findAll({
-      where: { userId: userInfo.id },
-      attributes: ['companyId']
-    });
+    const userCompanies = await UserCompany.findAll({ where: { userId: userInfo.id }, attributes: ['companyId'] });
     const companyIds = userCompanies.map(uc => uc.companyId);
-    where.id = { [Op.in]: companyIds }; // Filtra as empresas pelas quais o gestor é responsável
+    where.id = { [Op.in]: companyIds };
   }
 
-  const offset = (page - 1) * limit;
-
-  const { count, rows } = await Company.findAndCountAll({
+  const queryOptions = {
     where,
-    limit,
-    offset,
     order: [['tradeName', 'ASC']],
-  });
+  };
 
-  return { total: count, companies: rows, page, limit };
+  // Se 'all' não for true, aplica paginação
+  if (!all) {
+    queryOptions.limit = parseInt(limit, 10);
+    queryOptions.offset = (parseInt(page, 10) - 1) * queryOptions.limit;
+  }
+
+  const { count, rows } = await Company.findAndCountAll(queryOptions);
+  return { total: count, companies: rows, page: all ? 1 : page, limit: all ? count : limit };
 };
 
 /**
