@@ -84,7 +84,7 @@ const PORT = process.env.PORT || 3001;
 const startServer = async () => {
   try {
     // Sincroniza o banco de dados forçando recriação das tabelas
-    await db.sequelize.sync({ force: true }); 
+    await db.sequelize.sync({ force: false }); 
     console.log('Banco de dados sincronizado com sucesso (force: true).');
 
     // Inicia uma única transação para todo o processo de seeding
