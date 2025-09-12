@@ -1,18 +1,19 @@
 const express = require('express');
 const stepController = require('./steps.controller');
 const authMiddleware = require('../../middlewares/auth.middleware');
-const authorizeMiddleware = require('../../middlewares/authorize.middleware');
+const checkPermission = require('../../middlewares/checkPermission.middleware');
 
 const router = express.Router();
 
-// Protege todas as rotas de etapas, permitindo acesso apenas a ADMIN e RH.
-router.use(authMiddleware, authorizeMiddleware(['ADMIN', 'RH']));
+router.use(authMiddleware);
 
-// Rotas de CRUD para Etapas
-router.post('/', stepController.createStep);
-router.get('/', stepController.getAllSteps);
-router.get('/:id', stepController.getStepById);
-router.put('/:id', stepController.updateStep);
-router.delete('/:id', stepController.deleteStep);
+// Rotas de leitura
+router.get('/', checkPermission('steps:read'), stepController.getAllSteps);
+router.get('/:id', checkPermission('steps:read'), stepController.getStepById);
+
+// Rotas de escrita
+router.post('/', checkPermission('steps:write'), stepController.createStep);
+router.put('/:id', checkPermission('steps:write'), stepController.updateStep);
+router.delete('/:id', checkPermission('steps:write'), stepController.deleteStep);
 
 module.exports = router;

@@ -31,9 +31,10 @@ const getAllEmployees = async (req, res) => {
 
 const getEmployeeById = async (req, res) => {
   try {
-    const employee = await employeeService.findEmployeeById(req.params.id);
+    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta info do usuário
+    const employee = await employeeService.findEmployeeById(req.params.id, userInfo); // Passa userInfo
     if (!employee) {
-      return res.status(404).json({ error: 'Employee not found.' });
+      return res.status(404).json({ error: 'Employee not found or access denied.' });
     }
     return res.status(200).json(employee);
   } catch (error) {
@@ -43,7 +44,8 @@ const getEmployeeById = async (req, res) => {
 
 const updateEmployee = async (req, res) => {
   try {
-    const updatedEmployee = await employeeService.updateEmployee(req.params.id, req.body);
+    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta info do usuário
+    const updatedEmployee = await employeeService.updateEmployee(req.params.id, req.body, userInfo); // Passa userInfo
     if (!updatedEmployee) {
       return res.status(404).json({ error: 'Employee not found.' });
     }
@@ -53,18 +55,25 @@ const updateEmployee = async (req, res) => {
       const field = error.errors[0].path;
       return res.status(400).json({ error: `${field} already exists.` });
     }
+    if (error.message.startsWith('Access Denied')) {
+        return res.status(403).json({ error: error.message });
+    }
     return res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 };
 
 const deleteEmployee = async (req, res) => {
   try {
-    const success = await employeeService.deleteEmployee(req.params.id);
+    const userInfo = { id: req.userId, profile: req.userProfile }; // Coleta info do usuário
+    const success = await employeeService.deleteEmployee(req.params.id, userInfo); // Passa userInfo
     if (!success) {
       return res.status(404).json({ error: 'Employee not found.' });
     }
     return res.status(204).send();
   } catch (error) {
+     if (error.message.startsWith('Access Denied')) {
+        return res.status(403).json({ error: error.message });
+    }
     return res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 };

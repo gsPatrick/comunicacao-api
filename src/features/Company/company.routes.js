@@ -1,58 +1,26 @@
 const express = require('express');
 const companyController = require('./company.controller');
 const authMiddleware = require('../../middlewares/auth.middleware');
-const authorizeMiddleware = require('../../middlewares/authorize.middleware');
+const checkPermission = require('../../middlewares/checkPermission.middleware');
 
 const router = express.Router();
 
-// --- PERMISSÕES AJUSTADAS POR ROTA ---
+// Rota para CRIAR: Requer permissão de escrita
+router.post('/', authMiddleware, checkPermission('companies:write'), companyController.createCompany);
 
-// Rota para CRIAR: ADMIN, RH e GESTAO podem criar.
-router.post(
-    '/',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
-    companyController.createCompany
-);
+// Rota para LISTAR: Requer permissão de leitura
+router.get('/', authMiddleware, checkPermission('companies:read'), companyController.getAllCompanies);
 
-// Rota para LISTAR: ADMIN, RH e GESTAO podem listar (o service já filtra os dados para a GESTAO).
-router.get(
-    '/',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
-    companyController.getAllCompanies
-);
+// Rota de EXPORTAÇÃO: Requer permissão de leitura
+router.get('/export', authMiddleware, checkPermission('companies:read'), companyController.exportCompanies);
 
-// Rota de EXPORTAÇÃO: ADMIN, RH e GESTAO podem exportar.
-router.get(
-    '/export',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
-    companyController.exportCompanies
-);
+// Rota para DETALHES: Requer permissão de leitura
+router.get('/:id', authMiddleware, checkPermission('companies:read'), companyController.getCompanyById);
 
-// Rota para DETALHES: ADMIN, RH e GESTAO podem ver detalhes.
-router.get(
-    '/:id',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']),
-    companyController.getCompanyById
-);
+// Rota para ATUALIZAR: Requer permissão de escrita
+router.put('/:id', authMiddleware, checkPermission('companies:write'), companyController.updateCompany);
 
-// Rota para ATUALIZAR: Apenas ADMIN e RH podem editar.
-router.put(
-    '/:id',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH']),
-    companyController.updateCompany
-);
-
-// Rota para DELETAR: Apenas ADMIN e RH podem deletar.
-router.delete(
-    '/:id',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH']),
-    companyController.deleteCompany
-);
+// Rota para DELETAR: Requer permissão de escrita
+router.delete('/:id', authMiddleware, checkPermission('companies:write'), companyController.deleteCompany);
 
 module.exports = router;

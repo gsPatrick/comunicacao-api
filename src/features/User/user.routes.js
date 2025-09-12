@@ -1,31 +1,21 @@
 const express = require('express');
 const userController = require('./user.controller');
 const authMiddleware = require('../../middlewares/auth.middleware');
-const authorizeMiddleware = require('../../middlewares/authorize.middleware');
+const checkPermission = require('../../middlewares/checkPermission.middleware');
 
 const router = express.Router();
 
-// --- ORDEM DAS ROTAS CORRIGIDA ---
-
-// Rota para criar um usuário. Apenas ADMINS podem criar.
-router.post('/', authMiddleware, authorizeMiddleware(['ADMIN']), userController.createUser);
-
-// Rota para listar todos os usuários. ADMINS e RH podem listar.
-router.get('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), userController.getAllUsers);
-
-// Rota de exportação (MAIS ESPECÍFICA, VEM ANTES)
-router.get('/export', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), require('../Company/company.controller').exportCompanies); // Reutiliza a função se for idêntica ou cria uma específica
-
-// Rota para o usuário atualizar seu próprio perfil
+// Rota para o usuário logado atualizar seu próprio perfil (apenas autenticação)
 router.put('/profile/me', authMiddleware, userController.updateMyProfile);
 
-// Rota para buscar um usuário específico por ID (MAIS GENÉRICA, VEM DEPOIS)
-router.get('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), userController.getUserById);
+// Rotas de leitura de usuários
+router.get('/', authMiddleware, checkPermission('users:read'), userController.getAllUsers);
+router.get('/export', authMiddleware, checkPermission('users:read'), userController.exportUsers); // Corrigido para chamar o controller correto
+router.get('/:id', authMiddleware, checkPermission('users:read'), userController.getUserById);
 
-// Rota para atualizar um usuário. Apenas ADMINS podem.
-router.put('/:id', authMiddleware, authorizeMiddleware(['ADMIN']), userController.updateUser);
-
-// Rota para desativar (soft delete) um usuário. Apenas ADMINS podem.
-router.delete('/:id', authMiddleware, authorizeMiddleware(['ADMIN']), userController.deleteUser);
+// Rotas de escrita de usuários
+router.post('/', authMiddleware, checkPermission('users:write'), userController.createUser);
+router.put('/:id', authMiddleware, checkPermission('users:write'), userController.updateUser);
+router.delete('/:id', authMiddleware, checkPermission('users:write'), userController.deleteUser);
 
 module.exports = router;

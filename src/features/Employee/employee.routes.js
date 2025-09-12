@@ -1,28 +1,18 @@
 const express = require('express');
 const employeeController = require('./employee.controller');
 const authMiddleware = require('../../middlewares/auth.middleware');
-const authorizeMiddleware = require('../../middlewares/authorize.middleware');
-const companyController = require('../Company/company.controller');
+const checkPermission = require('../../middlewares/checkPermission.middleware');
 
 const router = express.Router();
-router.get('/export', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), employeeController.exportEmployees);
 
-// --- PERMISSÕES AJUSTADAS PARA PERMITIR LEITURA PELO SOLICITANTE ---
-// A lógica de segurança para filtrar os dados estará no service.
-router.get(
-    '/',
-    authMiddleware,
-    authorizeMiddleware(['ADMIN', 'RH', 'GESTAO', 'SOLICITANTE']), // Adicionado SOLICITANTE e GESTAO
-    employeeController.getAllEmployees
-);
+router.get('/export', authMiddleware, checkPermission('employees:read'), employeeController.exportEmployees);
+router.get('/', authMiddleware, checkPermission('employees:read'), employeeController.getAllEmployees);
+router.get('/:id', authMiddleware, checkPermission('employees:read'), employeeController.getEmployeeById);
 
-// Rota para importação em lote
-router.post('/import', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), employeeController.bulkImport);
+router.post('/import', authMiddleware, checkPermission('employees:import'), employeeController.bulkImport);
 
-// Rotas de CRUD para Colaboradores (exceto GET que foi movido para cima)
-router.post('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), employeeController.createEmployee);
-router.get('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), employeeController.getEmployeeById);
-router.put('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), employeeController.updateEmployee);
-router.delete('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), employeeController.deleteEmployee);
+router.post('/', authMiddleware, checkPermission('employees:write'), employeeController.createEmployee);
+router.put('/:id', authMiddleware, checkPermission('employees:write'), employeeController.updateEmployee);
+router.delete('/:id', authMiddleware, checkPermission('employees:write'), employeeController.deleteEmployee);
 
 module.exports = router;

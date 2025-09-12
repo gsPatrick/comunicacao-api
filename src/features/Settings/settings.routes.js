@@ -1,17 +1,17 @@
 const express = require('express');
 const settingsController = require('./settings.controller');
 const authMiddleware = require('../../middlewares/auth.middleware');
-const authorizeMiddleware = require('../../middlewares/authorize.middleware');
+const checkPermission = require('../../middlewares/checkPermission.middleware');
 
 const router = express.Router();
 
-// Protege todas as rotas de configurações, permitindo acesso apenas a ADMIN.
-router.use(authMiddleware, authorizeMiddleware(['ADMIN']));
+// Protege todas as rotas de configurações
+router.use(authMiddleware);
 
-// Rota para buscar a configuração atual do Resend
-router.get('/resend', settingsController.getResendSettings);
+// Rota para buscar a configuração (leitura)
+router.get('/resend', checkPermission('email-settings:read'), settingsController.getResendSettings);
 
-// Rota para salvar/atualizar a configuração do Resend
-router.put('/resend', settingsController.saveResendSettings);
+// Rota para salvar/atualizar a configuração (escrita)
+router.put('/resend', checkPermission('email-settings:write'), settingsController.saveResendSettings);
 
 module.exports = router;

@@ -1,5 +1,24 @@
-const { Employee, Position, WorkLocation, Contract, UserCompany, Company } = require('../../models'); // Adicionado UserCompany e Company
+const { Employee, Position, WorkLocation, Contract, UserCompany, Company, UserPermission } = require('../../models'); // Adicionado UserPermission
 const { Op } = require('sequelize');
+
+/**
+ * Função auxiliar para buscar os IDs de contrato permitidos para um usuário.
+ * @param {string} userId - O ID do usuário.
+ * @returns {Promise<Array<string>|null>} Um array de IDs de contrato ou null se o acesso for global.
+ */
+const getAllowedContractIds = async (userId) => {
+    const permissions = await UserPermission.findAll({
+        where: {
+            userId,
+            permissionKey: 'employees:read', // A permissão para ler colaboradores
+            scopeType: 'CONTRACT'
+        },
+        attributes: ['scopeId']
+    });
+
+    return permissions.map(p => p.scopeId);
+};
+
 
 /**
  * Cria um novo colaborador no banco de dados.
@@ -26,14 +45,13 @@ const createEmployee = async (employeeData) => {
 };
 
 /**
- * Busca todos os colaboradores com filtros e paginação, aplicando regras de permissão.
+ * Busca todos os colaboradores com filtros e paginação, aplicando regras de permissão por escopo.
  * @param {object} filters - Opções de filtro (name, cpf, registration, etc.).
  * @param {object} userInfo - Informações do usuário logado ({ id, profile }).
  * @returns {Promise<{total: number, employees: Array<Employee>, page: number, limit: number}>}
  */
-// --- FUNÇÃO MODIFICADA ---
 const findAllEmployees = async (filters, userInfo) => {
-  const { name, cpf, registration, contractId, workLocationId, page = 1, limit = 10, all = false } = filters; // Adicionado 'all'
+  const { name, cpf, registration, contractId, workLocationId, page = 1, limit = 10, all = false } = filters;
   const { id: userId, profile } = userInfo;
   const where = {};
 
@@ -43,13 +61,27 @@ const findAllEmployees = async (filters, userInfo) => {
   if (contractId) where.contractId = contractId;
   if (workLocationId) where.workLocationId = workLocationId;
 
-  if (profile === 'GESTAO' || profile === 'SOLICITANTE') {
-    const userCompanies = await UserCompany.findAll({ where: { userId }, attributes: ['companyId'] });
-    const companyIds = userCompanies.map(uc => uc.companyId);
-    const accessibleContracts = await Contract.findAll({ where: { companyId: { [Op.in]: companyIds } }, attributes: ['id'] });
-    const accessibleContractIds = accessibleContracts.map(c => c.id);
-    where.contractId = { [Op.in]: accessibleContractIds };
+  // --- NOVA LÓGICA DE ESCOPO ---
+  if (profile !== 'ADMIN') {
+    const accessibleContractIds = await getAllowedContractIds(userId);
+    
+    // Se o usuário não tem escopos definidos para esta permissão, ele não pode ver ninguém.
+    if (accessibleContractIds.length === 0) {
+        return { total: 0, employees: [], page: 1, limit: 0 };
+    }
+
+    // Adiciona o filtro de escopo à cláusula 'where' principal.
+    // Se o usuário já filtrou por um contrato, garante que ele só possa ver aquele se tiver permissão.
+    if (where.contractId) {
+        if (!accessibleContractIds.includes(where.contractId)) {
+            // O usuário está tentando filtrar um contrato ao qual não tem acesso.
+            return { total: 0, employees: [], page: 1, limit: 0 };
+        }
+    } else {
+        where.contractId = { [Op.in]: accessibleContractIds };
+    }
   }
+  // --- FIM DA NOVA LÓGICA ---
   
   const queryOptions = {
     where,
@@ -71,11 +103,12 @@ const findAllEmployees = async (filters, userInfo) => {
 };
 
 /**
- * Busca um colaborador pelo seu ID.
+ * Busca um colaborador pelo seu ID, validando o escopo de acesso.
  * @param {string} id - O ID do colaborador.
+ * @param {object} userInfo - Informações do usuário logado ({ id, profile }).
  * @returns {Promise<Employee|null>} O colaborador encontrado ou nulo.
  */
-const findEmployeeById = async (id) => {
+const findEmployeeById = async (id, userInfo) => {
   const employee = await Employee.findByPk(id, {
     include: [
       { model: Position, as: 'position' },
@@ -83,34 +116,73 @@ const findEmployeeById = async (id) => {
       { model: Contract, as: 'contract' }
     ]
   });
+
+  if (!employee) return null;
+
+  // Validação de escopo
+  if (userInfo.profile !== 'ADMIN') {
+    const accessibleContractIds = await getAllowedContractIds(userInfo.id);
+    if (!accessibleContractIds.includes(employee.contractId)) {
+        return null; // Usuário não tem permissão para este contrato
+    }
+  }
+
   return employee;
 };
 
 /**
- * Atualiza os dados de um colaborador.
+ * Atualiza os dados de um colaborador, validando o escopo de acesso.
  * @param {string} id - O ID do colaborador a ser atualizado.
  * @param {object} updateData - Os dados a serem atualizados.
- * @returns {Promise<Employee|null>} O colaborador atualizado ou nulo se não encontrado.
+ * @param {object} userInfo - Informações do usuário logado ({ id, profile }).
+ * @returns {Promise<Employee|null>} O colaborador atualizado ou nulo se não encontrado/permitido.
  */
-const updateEmployee = async (id, updateData) => {
+const updateEmployee = async (id, updateData, userInfo) => {
   const employee = await Employee.findByPk(id);
   if (!employee) {
     return null;
   }
+
+  // Validação de escopo para escrita
+  if (userInfo.profile !== 'ADMIN') {
+     const permissions = await UserPermission.findAll({
+        where: { userId: userInfo.id, permissionKey: 'employees:write', scopeType: 'CONTRACT' },
+        attributes: ['scopeId']
+    });
+    const writableContractIds = permissions.map(p => p.scopeId);
+    if (!writableContractIds.includes(employee.contractId)) {
+        throw new Error('Access Denied: You do not have permission to modify employees in this contract.');
+    }
+  }
+
   await employee.update(updateData);
   return employee;
 };
 
 /**
- * Deleta um colaborador do banco de dados.
+ * Deleta um colaborador do banco de dados, validando o escopo de acesso.
  * @param {string} id - O ID do colaborador a ser deletado.
+ * @param {object} userInfo - Informações do usuário logado ({ id, profile }).
  * @returns {Promise<boolean>} True se foi bem-sucedido, false caso contrário.
  */
-const deleteEmployee = async (id) => {
+const deleteEmployee = async (id, userInfo) => {
   const employee = await Employee.findByPk(id);
   if (!employee) {
     return false;
   }
+
+  // Validação de escopo para escrita (delete)
+  if (userInfo.profile !== 'ADMIN') {
+     const permissions = await UserPermission.findAll({
+        where: { userId: userInfo.id, permissionKey: 'employees:write', scopeType: 'CONTRACT' },
+        attributes: ['scopeId']
+    });
+    const writableContractIds = permissions.map(p => p.scopeId);
+    if (!writableContractIds.includes(employee.contractId)) {
+        throw new Error('Access Denied: You do not have permission to delete employees in this contract.');
+    }
+  }
+
   await employee.destroy();
   return true;
 };
@@ -170,13 +242,19 @@ const exportAllEmployees = async (filters, userInfo) => {
   if (contractId) where.contractId = contractId;
   if (workLocationId) where.workLocationId = workLocationId;
   
-  if (profile === 'GESTAO' || profile === 'SOLICITANTE') {
-    const userCompanies = await UserCompany.findAll({ where: { userId }, attributes: ['companyId'] });
-    const companyIds = userCompanies.map(uc => uc.companyId);
-    const accessibleContracts = await Contract.findAll({ where: { companyId: { [Op.in]: companyIds } }, attributes: ['id'] });
-    const accessibleContractIds = accessibleContracts.map(c => c.id);
-    where.contractId = { [Op.in]: accessibleContractIds };
+  // --- NOVA LÓGICA DE ESCOPO (IDÊNTICA A findAllEmployees) ---
+  if (profile !== 'ADMIN') {
+    const accessibleContractIds = await getAllowedContractIds(userId);
+    if (accessibleContractIds.length === 0) {
+        return [];
+    }
+    if (where.contractId) {
+        if (!accessibleContractIds.includes(where.contractId)) return [];
+    } else {
+        where.contractId = { [Op.in]: accessibleContractIds };
+    }
   }
+  // --- FIM DA NOVA LÓGICA ---
 
   const employees = await Employee.findAll({
     where,

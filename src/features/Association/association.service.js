@@ -93,9 +93,59 @@ const findUsersByCompany = async (companyId) => {
   return company.users;
 };
 
+/**
+ * Busca todas as permissões disponíveis no sistema.
+ */
+const findAllPermissions = async () => {
+  return await Permission.findAll({ order: [['key', 'ASC']] });
+};
+
+/**
+ * Busca as permissões de um usuário específico.
+ */
+const findPermissionsByUser = async (userId) => {
+  return await UserPermission.findAll({ where: { userId } });
+};
+
+/**
+ * Substitui TODAS as permissões de um usuário pelas novas fornecidas.
+ * @param {string} userId - ID do usuário.
+ * @param {Array<object>} permissionsData - Array de objetos de permissão { permissionKey, scopeType, scopeId }.
+ */
+const setUserPermissions = async (userId, permissionsData) => {
+  const user = await User.findByPk(userId);
+  if (!user) throw new Error('User not found.');
+
+  const transaction = await sequelize.transaction();
+  try {
+    // 1. Deleta todas as permissões antigas
+    await UserPermission.destroy({ where: { userId }, transaction });
+
+    // 2. Insere as novas permissões (se houver alguma)
+    if (permissionsData && permissionsData.length > 0) {
+      const newPermissions = permissionsData.map(p => ({
+        userId,
+        permissionKey: p.permissionKey,
+        scopeType: p.scopeType || null,
+        scopeId: p.scopeId || null,
+      }));
+      await UserPermission.bulkCreate(newPermissions, { transaction, validate: true });
+    }
+    
+    await transaction.commit();
+    return true;
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+};
+
 module.exports = {
   linkUserToCompanies,
   unlinkUserFromCompany,
   findCompaniesByUser,
-  findUsersByCompany
+  findUsersByCompany,
+  findAllPermissions,
+  findPermissionsByUser,
+  setUserPermissions,
 };

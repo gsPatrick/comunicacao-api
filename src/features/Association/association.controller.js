@@ -50,9 +50,45 @@ const getUsersByCompany = async (req, res) => {
   }
 };
 
+const getAllPermissions = async (req, res) => {
+  try {
+    const permissions = await associationService.findAllPermissions();
+    return res.status(200).json(permissions);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+const getUserPermissions = async (req, res) => {
+  try {
+    const permissions = await associationService.findPermissionsByUser(req.params.userId);
+    return res.status(200).json(permissions);
+  } catch (error) {
+    return res.status(404).json({ error: error.message });
+  }
+};
+
+const updateUserPermissions = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { permissions } = req.body; // Espera um array de objetos de permissão
+    if (!Array.isArray(permissions)) {
+      return res.status(400).json({ error: 'Field "permissions" must be an array.' });
+    }
+    await associationService.setUserPermissions(userId, permissions);
+    return res.status(200).json({ message: 'User permissions updated successfully.' });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+
 module.exports = {
   linkUserToCompanies,
   unlinkUserFromCompany,
   getCompaniesByUser,
-  getUsersByCompany
+  getUsersByCompany,
+ getAllPermissions,
+  getUserPermissions,
+  updateUserPermissions,
 };

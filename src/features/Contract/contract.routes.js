@@ -1,28 +1,26 @@
 const express = require('express');
 const contractController = require('./contract.controller');
 const authMiddleware = require('../../middlewares/auth.middleware');
-const authorizeMiddleware = require('../../middlewares/authorize.middleware');
+const checkPermission = require('../../middlewares/checkPermission.middleware');
 
 const router = express.Router();
 
-// --- PERMISSÕES AJUSTADAS POR ROTA ---
+// CRIAR: Requer permissão de escrita
+router.post('/', authMiddleware, checkPermission('contracts:write'), contractController.createContract);
 
-// CRIAR: Apenas ADMIN, RH e GESTAO
-router.post('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), contractController.createContract);
+// LER (LISTAR): Requer permissão de leitura
+router.get('/', authMiddleware, checkPermission('contracts:read'), contractController.getAllContracts);
 
-// LER (LISTAR): ADMIN, RH, GESTAO e agora SOLICITAN.TE (para preencher formulários)
-router.get('/', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO', 'SOLICITANTE']), contractController.getAllContracts);
+// EXPORTAR: Requer permissão de leitura
+router.get('/export', authMiddleware, checkPermission('contracts:read'), contractController.exportContracts);
 
-// EXPORTAR: ADMIN, RH e GESTAO
-router.get('/export', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), contractController.exportContracts);
+// LER (DETALHES): Requer permissão de leitura
+router.get('/:id', authMiddleware, checkPermission('contracts:read'), contractController.getContractById);
 
-// LER (DETALHES): ADMIN, RH e GESTAO
-router.get('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH', 'GESTAO']), contractController.getContractById);
+// ATUALIZAR: Requer permissão de escrita
+router.put('/:id', authMiddleware, checkPermission('contracts:write'), contractController.updateContract);
 
-// ATUALIZAR: Apenas ADMIN e RH
-router.put('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), contractController.updateContract);
-
-// DELETAR: Apenas ADMIN e RH
-router.delete('/:id', authMiddleware, authorizeMiddleware(['ADMIN', 'RH']), contractController.deleteContract);
+// DELETAR: Requer permissão de escrita
+router.delete('/:id', authMiddleware, checkPermission('contracts:write'), contractController.deleteContract);
 
 module.exports = router;

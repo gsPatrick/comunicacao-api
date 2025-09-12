@@ -1,4 +1,4 @@
-const { WorkLocation, Contract, Company, UserCompany } = require('../../models'); // Adicionado Company, UserCompany
+const { WorkLocation, Contract, Company, UserPermission } = require('../../models'); // Adicionado UserPermission
 const { Op } = require('sequelize');
 
 /**
@@ -17,7 +17,7 @@ const createWorkLocation = async (locationData) => {
 };
 
 /**
- * Busca todos os locais de trabalho com filtros (por contractId) e paginação.
+ * Busca todos os locais de trabalho com filtros e paginação, aplicando permissões de escopo.
  * @param {object} filters - Opções de filtro (contractId, name, page, limit).
  * @param {object} userInfo - Informações do usuário logado ({ id, profile }).
  * @returns {Promise<{total: number, workLocations: Array<WorkLocation>, page: number, limit: number}>}
@@ -29,26 +29,41 @@ const findAllWorkLocations = async (filters, userInfo) => {
   if (contractId) where.contractId = contractId;
   if (name) where.name = { [Op.iLike]: `%${name}%` };
 
-  if (userInfo && userInfo.profile === 'GESTAO') {
-    const userCompanies = await UserCompany.findAll({ where: { userId: userInfo.id }, attributes: ['companyId'] });
-    const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
+  // --- NOVA LÓGICA DE ESCOPO DE PERMISSÃO ---
+  // Se o usuário não é Admin, buscamos os escopos de empresa aos quais ele tem acesso.
+  if (userInfo && userInfo.profile !== 'ADMIN') {
+    const permissions = await UserPermission.findAll({
+      where: {
+        userId: userInfo.id,
+        permissionKey: 'work-locations:read', // Permissão necessária para esta ação
+        scopeType: 'COMPANY', // O escopo é definido por Empresa
+      },
+      attributes: ['scopeId'],
+    });
+
+    const allowedCompanyIds = permissions.map(p => p.scopeId);
+
+    // Se o usuário não tem permissão para nenhuma empresa, ele não pode ver nenhum local.
+    if (allowedCompanyIds.length === 0) {
+      return { total: 0, workLocations: [], page: parseInt(page, 10), limit: parseInt(limit, 10) };
+    }
+
     companyWhere.id = { [Op.in]: allowedCompanyIds };
   }
+  // --- FIM DA NOVA LÓGICA ---
 
   const queryOptions = {
     where,
     include: [{
       model: Contract,
       as: 'contract',
-      attributes: ['id', 'name'],
+      required: true, // Garante que locais sem contrato não sejam listados
       include: [{
         model: Company,
         as: 'company',
-        attributes: [],
-        where: companyWhere,
-        required: !!(Object.keys(companyWhere).length > 0)
+        where: companyWhere, // Aplica o filtro de escopo aqui
+        required: true, // Garante que o filtro seja aplicado (INNER JOIN)
       }],
-      required: !!(Object.keys(companyWhere).length > 0)
     }],
     order: [['name', 'ASC']],
   };
@@ -59,43 +74,54 @@ const findAllWorkLocations = async (filters, userInfo) => {
   }
   
   const { count, rows } = await WorkLocation.findAndCountAll(queryOptions);
-  return { total: count, workLocations: rows, page: all ? 1 : page, limit: all ? count : limit };
+  return { total: count, workLocations: rows, page: all ? 1 : parseInt(page, 10), limit: all ? count : parseInt(limit, 10) };
 };
 
 
 /**
- * Busca um local de trabalho pelo seu ID.
+ * Busca um local de trabalho pelo seu ID, validando o escopo de permissão.
  * @param {string} id - O ID do local.
  * @param {object} userInfo - Informações do usuário logado ({ id, profile }).
- * @returns {Promise<WorkLocation|null>} O local de trabalho encontrado ou nulo.
+ * @returns {Promise<WorkLocation|null>} O local de trabalho encontrado ou nulo se não existir ou o acesso for negado.
  */
 const findWorkLocationById = async (id, userInfo) => {
-  const companyWhere = {}; // Novo objeto where para a Company
-
-  // Lógica de permissão para GESTAO
-  if (userInfo && userInfo.profile === 'GESTAO') {
-    const userCompanies = await UserCompany.findAll({
-      where: { userId: userInfo.id },
-      attributes: ['companyId']
-    });
-    const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
-    companyWhere.id = { [Op.in]: allowedCompanyIds }; // Filtra as empresas pelas quais o gestor é responsável
-  }
-
-  const workLocation = await WorkLocation.findByPk(id, {
+  const queryOptions = {
     include: [{
       model: Contract,
       as: 'contract',
-      include: [{ // Inclui Company dentro de Contract para aplicar o filtro
+      required: true,
+      include: [{
         model: Company,
         as: 'company',
-        attributes: [], // Não precisamos dos atributos da Company diretamente aqui
-        where: companyWhere,
-        required: !!(Object.keys(companyWhere).length > 0)
+        required: true,
       }],
-      required: !!(Object.keys(companyWhere).length > 0) // Garante que o JOIN com Contract e Company ocorra
     }]
-  });
+  };
+
+  // --- NOVA LÓGICA DE ESCOPO DE PERMISSÃO ---
+  if (userInfo && userInfo.profile !== 'ADMIN') {
+    const permissions = await UserPermission.findAll({
+      where: {
+        userId: userInfo.id,
+        permissionKey: 'work-locations:read',
+        scopeType: 'COMPANY',
+      },
+      attributes: ['scopeId'],
+    });
+    
+    const allowedCompanyIds = permissions.map(p => p.scopeId);
+
+    // Adiciona o filtro diretamente na consulta para garantir que o usuário só possa
+    // buscar por ID locais de trabalho dentro do seu escopo de permissão.
+    queryOptions.include[0].include[0].where = {
+      id: { [Op.in]: allowedCompanyIds },
+    };
+  }
+  // --- FIM DA NOVA LÓGICA ---
+
+  // O findByPk, combinado com os joins e a cláusula 'where' interna, retornará nulo
+  // se o local não for encontrado OU se ele não pertencer a uma empresa permitida.
+  const workLocation = await WorkLocation.findByPk(id, queryOptions);
   return workLocation;
 };
 
@@ -128,24 +154,48 @@ const deleteWorkLocation = async (id) => {
   return true;
 };
 
-// --- NOVA FUNÇÃO DE EXPORTAÇÃO ---
+/**
+ * Exporta todos os locais de trabalho, aplicando o escopo de permissão do usuário.
+ * @param {object} filters - Filtros da requisição.
+ * @param {object} userInfo - Informações do usuário logado.
+ * @returns {Promise<Array<WorkLocation>>} Uma lista de locais de trabalho.
+ */
 const exportAllWorkLocations = async (filters, userInfo) => {
     const { contractId, name } = filters;
     const where = {};
     const companyWhere = {};
     if (contractId) where.contractId = contractId;
     if (name) where.name = { [Op.iLike]: `%${name}%` };
-    if (userInfo && userInfo.profile === 'GESTAO') {
-        const userCompanies = await UserCompany.findAll({ where: { userId: userInfo.id }, attributes: ['companyId'] });
-        const allowedCompanyIds = userCompanies.map(uc => uc.companyId);
+
+    // --- NOVA LÓGICA DE ESCOPO DE PERMISSÃO ---
+    if (userInfo && userInfo.profile !== 'ADMIN') {
+        const permissions = await UserPermission.findAll({
+            where: {
+                userId: userInfo.id,
+                permissionKey: 'work-locations:read',
+                scopeType: 'COMPANY',
+            },
+            attributes: ['scopeId'],
+        });
+        const allowedCompanyIds = permissions.map(p => p.scopeId);
+        
+        if (allowedCompanyIds.length === 0) {
+            return []; // Retorna array vazio se não tiver acesso a nenhuma empresa
+        }
         companyWhere.id = { [Op.in]: allowedCompanyIds };
     }
+    // --- FIM DA NOVA LÓGICA ---
+
     const workLocations = await WorkLocation.findAll({
         where,
         include: [{
             model: Contract, as: 'contract', attributes: ['id', 'name'],
-            include: [{ model: Company, as: 'company', attributes: [], where: companyWhere, required: !!(Object.keys(companyWhere).length > 0) }],
-            required: true
+            required: true,
+            include: [{ 
+              model: Company, as: 'company', 
+              where: companyWhere,
+              required: true
+            }],
         }],
         order: [['name', 'ASC']],
     });
