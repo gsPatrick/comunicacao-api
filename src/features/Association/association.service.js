@@ -1,4 +1,4 @@
-const { User, Company, UserCompany } = require('../../models');
+const { User, Company, UserCompany, Permission, UserPermission, sequelize } = require('../../models');
 const { Op } = require('sequelize');
 
 /**

@@ -11,6 +11,7 @@ const {
   Workflow,
   Step,
   WorkflowStep,
+  Permission,
   UserPermission, // <-- NOVO MODELO IMPORTADO
   sequelize
 } = require('../../models');

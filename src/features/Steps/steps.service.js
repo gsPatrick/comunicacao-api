@@ -1,4 +1,4 @@
-const { Step, WorkflowStep } = require('../../models');
+const { Step, WorkflowStep,Permission, userPermissions} = require('../../models');
 const { Op } = require('sequelize');
 
 /**

@@ -1,4 +1,4 @@
-const { Employee, Request, RequestStatusLog, Workflow, User, Position, UserPermission, Contract, sequelize } = require('../../models');
+const { Employee, Request, RequestStatusLog, Workflow, User, Position, UserPermission, Permission, Contract, sequelize } = require('../../models');
 const { Op } = require('sequelize');
 const { startOfMonth, endOfMonth } = require('date-fns');
 const { formatDistanceToNow } = require('date-fns');

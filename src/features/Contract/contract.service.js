@@ -1,4 +1,4 @@
-const { Contract, Company, WorkLocation, UserPermission } = require('../../models'); // Adicionado UserPermission e removido UserCompany
+const { Contract, Company, WorkLocation, UserPermission, Permission } = require('../../models'); // Adicionado UserPermission e removido UserCompany
 const { Op } = require('sequelize');
 
 /**

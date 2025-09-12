@@ -1,4 +1,4 @@
-const { Request, Employee, Workflow, UserPermission, sequelize } = require('../../models');
+const { Request, Employee, Workflow, UserPermission,Permission, sequelize } = require('../../models');
 const { Op } = require('sequelize');
 
 /**
