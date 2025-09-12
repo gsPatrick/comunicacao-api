@@ -1,9 +1,13 @@
+'use strict';
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { User } = require('../../models');
+const { User, UserPermission } = require('../../models'); // Adicionado UserPermission
 
 /**
- * Autentica um usuário e gera um token JWT.
+ * Autentica um usuário, busca suas permissões granulares e gera um token JWT.
+ * O token agora conterá um array com todas as chaves de permissão do usuário.
+ *
  * @param {string} email - O email do usuário.
  * @param {string} password - A senha do usuário.
  * @returns {Promise<{user: object, token: string}>} Um objeto com os dados do usuário e o token.
@@ -14,7 +18,7 @@ const login = async (email, password) => {
   const user = await User.findOne({ where: { email } });
   
   if (!user) {
-    throw new Error('Invalid credentials'); // Erro genérico para não informar se o email existe
+    throw new Error('Invalid credentials'); // Erro genérico para segurança
   }
 
   // 2. Verificar se o usuário está ativo
@@ -29,10 +33,21 @@ const login = async (email, password) => {
     throw new Error('Invalid credentials');
   }
 
-  // 4. Gerar o token JWT
+  // --- NOVA LÓGICA: Buscar todas as permissões do usuário ---
+  const userPermissions = await UserPermission.findAll({
+    where: { userId: user.id },
+    attributes: ['permissionKey'], // Queremos apenas a lista de chaves
+  });
+  
+  // Extrai apenas as chaves de permissão para um array simples (ex: ['dashboard:view', 'users:read'])
+  const permissionKeys = userPermissions.map(p => p.permissionKey);
+  // -----------------------------------------------------------
+
+  // 4. Gerar o token JWT com as permissões no payload
   const payload = {
     id: user.id,
-    profile: user.profile,
+    profile: user.profile, // O perfil ainda é útil, especialmente para a regra "ADMIN pode tudo"
+    permissions: permissionKeys, // Array de permissões do usuário
   };
 
   const token = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -40,7 +55,8 @@ const login = async (email, password) => {
   });
 
   // 5. Retornar os dados do usuário (sem a senha) e o token
-  user.password = undefined;
+  user.password = undefined; // Nunca retorne a senha na resposta da API
+  
   return { user, token };
 };
 
