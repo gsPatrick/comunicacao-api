@@ -157,6 +157,20 @@ const exportRequests = async (req, res) => {
     }
 };
 
+const createWorkplaceChangeRequest = async (req, res) => {
+  try {
+    const solicitantId = req.userId;
+    // Chamamos o serviço genérico, especificando que o workflow é 'TROCA_DE_LOCAL'
+    const request = await requestService.createRequest('TROCA_DE_LOCAL', req.body, solicitantId);
+    return res.status(201).json(request);
+  } catch (error) {
+    if (error.message.startsWith('Permission Denied')) return res.status(403).json({ error: error.message });
+    if (error.message.startsWith('Invalid Data')) return res.status(400).json({ error: error.message });
+    if (error.message.includes('Workflow not properly configured')) return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+};
+
 module.exports = {
   createAdmissionRequest,
   createResignationRequest,
@@ -165,5 +179,6 @@ module.exports = {
   updateRequestStatus,
   requestCancellation, 
   resolveCancellation,
-  exportRequests
+  exportRequests,
+  createWorkplaceChangeRequest
 };

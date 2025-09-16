@@ -21,6 +21,8 @@ router.get('/:id', checkAnyPermission(readPermissions), requestController.getReq
 // ROTAS DE AÇÕES DE ATUALIZAÇÃO DE STATUS
 router.patch('/:id/status', checkPermission('requests:update'), requestController.updateRequestStatus);
 
+router.post('/workplace-change', checkPermission('requests:create'), requestController.createWorkplaceChangeRequest);
+
 // ROTAS DO FLUXO DE CANCELAMENTO (são consideradas uma forma de 'update')
 router.post('/:id/request-cancellation', checkPermission('requests:update'), requestController.requestCancellation);
 router.post('/:id/resolve-cancellation', checkPermission('requests:update'), requestController.resolveCancellation);
