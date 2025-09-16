@@ -8,6 +8,7 @@ const { User, Workflow } = require('./models');
 const bcrypt = require('bcryptjs');
 const { seedFromExcel } = require('./utils/databaseSeeder');
 const { seedPermissions } = require('./utils/seedPermissions'); // <-- 1. IMPORTAR A NOVA FUNÇÃO
+const { seedEmployees } = require('./utils/employeeSeeder'); // <-- 1. IMPORTE A NOVA FUNÇÃO
 
 const app = express();
 
@@ -78,22 +79,24 @@ const PORT = process.env.PORT || 3001;
 
 const startServer = async () => {
   try {
-    // Sincroniza o banco de dados forçando recriação das tabelas
     await db.sequelize.sync({ force: true }); 
     console.log('Banco de dados sincronizado com sucesso (force: true).');
 
     console.log('Iniciando seeding de dados essenciais...');
     const transaction = await db.sequelize.transaction();
     try {
-      // 1. Popula as permissões PRIMEIRO, pois são a base
-      await seedPermissions({ transaction }); // <-- 2. CHAMAR A FUNÇÃO AQUI
+      // 1. Popula as permissões
+      await seedPermissions({ transaction });
 
       // 2. Cria dados essenciais (admin, workflows)
       await createDefaultAdmin({ transaction });
       await createDefaultWorkflows({ transaction });
       
-      // 3. Popula o banco com a estrutura do arquivo Excel
+      // 3. Popula a ESTRUTURA (Clientes, Contratos, etc)
       await seedFromExcel({ transaction });
+
+      // 4. Popula os FUNCIONÁRIOS (depende da estrutura acima)
+      await seedEmployees({ transaction }); // <-- 2. CHAME A NOVA FUNÇÃO AQUI
 
       await transaction.commit();
       console.log('✅ Seeding automático concluído com sucesso!');
