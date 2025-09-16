@@ -89,7 +89,8 @@ const findAllEmployees = async (filters, userInfo) => {
     include: [
       { model: Position, as: 'position', attributes: ['id', 'name'] },
       { model: WorkLocation, as: 'workLocation', attributes: ['id', 'name'] },
-      { model: Contract, as: 'contract', attributes: ['id', 'name'] },
+      // CÓDIGO CORRIGIDO
+{ model: Contract, as: 'contract', attributes: ['id', 'name', 'companyId'] },
     ]
   };
 
@@ -262,7 +263,8 @@ const exportAllEmployees = async (filters, userInfo) => {
     include: [
       { model: Position, as: 'position', attributes: ['name'] },
       { model: WorkLocation, as: 'workLocation', attributes: ['name'] },
-      { model: Contract, as: 'contract', attributes: ['name'] },
+      // CÓDIGO CORRIGIDO
+{ model: Contract, as: 'contract', attributes: ['id', 'name', 'companyId'] },
     ]
   });
 
