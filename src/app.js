@@ -79,24 +79,24 @@ const PORT = process.env.PORT || 3001;
 
 const startServer = async () => {
   try {
-    await db.sequelize.sync({ force: true }); 
+    await db.sequelize.sync({ force: false }); 
     console.log('Banco de dados sincronizado com sucesso (force: true).');
 
     console.log('Iniciando seeding de dados essenciais...');
     const transaction = await db.sequelize.transaction();
     try {
       // 1. Popula as permissões
-      await seedPermissions({ transaction });
+    //  await seedPermissions({ transaction });
 
       // 2. Cria dados essenciais (admin, workflows)
       await createDefaultAdmin({ transaction });
-      await createDefaultWorkflows({ transaction });
+ //     await createDefaultWorkflows({ transaction });
       
       // 3. Popula a ESTRUTURA (Clientes, Contratos, etc)
-      await seedFromExcel({ transaction });
+   //   await seedFromExcel({ transaction });
 
       // 4. Popula os FUNCIONÁRIOS (depende da estrutura acima)
-      await seedEmployees({ transaction }); // <-- 2. CHAME A NOVA FUNÇÃO AQUI
+    //  await seedEmployees({ transaction }); // <-- 2. CHAME A NOVA FUNÇÃO AQUI
 
       await transaction.commit();
       console.log('✅ Seeding automático concluído com sucesso!');

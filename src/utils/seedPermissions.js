@@ -9,7 +9,7 @@ const permissionsList = [
   { key: 'requests:read:own', description: 'Ver apenas as próprias solicitações' },
   { key: 'requests:read:company', description: 'Ver solicitações da(s) empresa(s) associada(s)' },
   { key: 'requests:read:all', description: 'Ver todas as solicitações do sistema' },
-  { key: 'requests:update', description: 'Mudar o status de uma solicitação' },
+  { key: 'requests:update', description: 'Solicitar cancelamento' },
   { key: 'requests:export', description: 'Exportar dados de solicitações' },
   { key: 'users:read', description: 'Visualizar usuários' },
   { key: 'users:write', description: 'Criar/Editar/Desativar usuários' },
