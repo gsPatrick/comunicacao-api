@@ -1,6 +1,6 @@
 const { User } = require('../../models');
 const { Op } = require('sequelize');
-const emailService = require('../Email/email.service'); // <-- NOVO: Importa o serviço de email
+const emailService = require('../Email/email.service');
 
 /**
  * Cria um novo usuário no banco de dados.
@@ -9,20 +9,14 @@ const emailService = require('../Email/email.service'); // <-- NOVO: Importa o s
  */
 const createUser = async (userData) => {
   const user = await User.create(userData);
-
-  // --- NOVO: Envio de e-mail de boas-vindas ---
   if (user && userData.password) {
     try {
       await emailService.sendWelcomeEmail(user, userData.password);
     } catch (emailError) {
-      // O erro já é logado dentro do emailService.
-      // A falha no envio de email não deve impedir a criação do usuário.
       console.error(`Falha ao enfileirar e-mail de boas-vindas para ${user.email}, mas o usuário foi criado.`);
     }
   }
-  // ---------------------------------------------
-
-  user.password = undefined; // Nunca retorne a senha
+  user.password = undefined;
   return user;
 };
 
@@ -44,7 +38,7 @@ const findAllUsers = async (filters) => {
 
   const { count, rows } = await User.findAndCountAll({
     where,
-    attributes: { exclude: ['password'] }, // Exclui o campo de senha da consulta
+    attributes: { exclude: ['password'] },
     limit,
     offset,
     order: [['name', 'ASC']],
@@ -76,12 +70,9 @@ const updateUser = async (id, updateData) => {
   if (!user) {
     return null;
   }
-
-  // Remove o campo de senha se ele não for alterado ou for nulo
   if (updateData.password === null || updateData.password === undefined || updateData.password === '') {
     delete updateData.password;
   }
-  
   await user.update(updateData);
   user.password = undefined;
   return user;
@@ -102,6 +93,20 @@ const softDeleteUser = async (id) => {
 };
 
 /**
+ * Exclui permanentemente um usuário do banco de dados. AÇÃO IRREVERSÍVEL.
+ * @param {string} id - O ID do usuário a ser excluído.
+ * @returns {Promise<boolean>} True se foi bem-sucedido, false se o usuário não foi encontrado.
+ */
+const hardDeleteUser = async (id) => {
+  const user = await User.findByPk(id);
+  if (!user) {
+    return false;
+  }
+  await user.destroy(); // Isso remove a linha do banco de dados
+  return true;
+};
+
+/**
  * Busca TODOS os usuários que correspondem aos filtros, sem paginação, para exportação.
  * @param {object} filters - Opções de filtro (name, email, profile, isActive).
  * @returns {Promise<Array<User>>} Um array com todos os usuários encontrados.
@@ -117,7 +122,7 @@ const exportAllUsers = async (filters) => {
 
   const users = await User.findAll({
     where,
-    attributes: { exclude: ['password'] }, // Garante que a senha nunca seja exportada
+    attributes: { exclude: ['password'] },
     order: [['name', 'ASC']],
   });
 
@@ -130,5 +135,6 @@ module.exports = {
   findUserById,
   updateUser,
   softDeleteUser,
+  hardDeleteUser,
   exportAllUsers
 };
