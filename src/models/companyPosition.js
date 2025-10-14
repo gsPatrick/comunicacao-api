@@ -1,25 +1,28 @@
 'use strict';
 const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
-class UserCompany extends Model {
-static associate(models) {
-// Associações podem ser definidas aqui se necessário
-}
-}
-UserCompany.init({
-userId: {
-type: DataTypes.UUID,
-references: { model: 'users', key: 'id' }, // CORRIGIDO: 'Users' para 'users'
-primaryKey: true,
-},
-companyId: {
-type: DataTypes.UUID,
-references: { model: 'companies', key: 'id' }, // CORRIGIDO: 'Companies' para 'companies'
-primaryKey: true,
-},
-}, {
-sequelize,
-modelName: 'UserCompany',
-});
-return UserCompany;
+  // NOME DO MODELO CORRIGIDO AQUI
+  class CompanyPosition extends Model {
+    static associate(models) {
+      // Associações podem ser definidas aqui se necessário
+    }
+  }
+  CompanyPosition.init({
+    companyId: {
+      type: DataTypes.UUID,
+      references: { model: 'companies', key: 'id' },
+      primaryKey: true,
+    },
+    positionId: {
+      type: DataTypes.UUID,
+      references: { model: 'positions', key: 'id' },
+      primaryKey: true,
+    },
+  }, {
+    sequelize,
+    // NOME DO MODELO CORRIGIDO AQUI
+    modelName: 'CompanyPosition',
+    tableName: 'company_positions', // Garante o nome correto da tabela
+  });
+  return CompanyPosition;
 };

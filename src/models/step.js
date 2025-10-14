@@ -30,7 +30,8 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: 'Step',
-    tableName: 'Steps', // Explicitly define table name
+    // NOME DA TABELA CORRIGIDO PARA MINÚSCULAS
+    tableName: 'steps',
   });
   return Step;
 };

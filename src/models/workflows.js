@@ -34,7 +34,8 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: 'Workflow',
-    tableName: 'Workflows', // Explicitly define table name
+    // NOME DA TABELA CORRIGIDO PARA MINÚSCULAS
+    tableName: 'workflows',
   });
   return Workflow;
 };
