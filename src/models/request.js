@@ -4,24 +4,56 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class Request extends Model {
     static associate(models) {
-      // Uma solicitação é criada por um usuário (Solicitante)
-      this.belongsTo(models.User, { foreignKey: 'solicitantId', as: 'solicitant' });
-      // Uma solicitação pertence a uma empresa/cliente
-      this.belongsTo(models.Company, { foreignKey: 'companyId', as: 'company' });
-      // Uma solicitação está vinculada a um contrato
-      this.belongsTo(models.Contract, { foreignKey: 'contractId', as: 'contract' });
-      // Uma solicitação está vinculada a um local de trabalho
-      this.belongsTo(models.WorkLocation, { foreignKey: 'workLocationId', as: 'workLocation' });
-      // Uma solicitação de admissão é para um cargo
-      this.belongsTo(models.Position, { foreignKey: 'positionId', as: 'position' });
-      // Uma solicitação de desligamento/substituição refere-se a um funcionário existente
-      this.belongsTo(models.Employee, { foreignKey: 'employeeId', as: 'employee' });
-      // Uma solicitação tem um histórico de mudanças de status
-      this.hasMany(models.RequestStatusLog, { foreignKey: 'requestId', as: 'statusHistory' });
-      // Uma solicitação está vinculada a um Workflow
-      this.belongsTo(models.Workflow, { foreignKey: 'workflowId', as: 'workflow' });
+      // Associação com o Workflow
+      Request.belongsTo(models.Workflow, {
+        foreignKey: 'workflowId',
+        as: 'workflow',
+      });
+
+      // Associação com a Empresa (Cliente)
+      Request.belongsTo(models.Company, {
+        foreignKey: 'companyId',
+        as: 'company',
+      });
+
+      // Associação com o Contrato
+      Request.belongsTo(models.Contract, {
+        foreignKey: 'contractId',
+        as: 'contract',
+      });
+
+      // Associação com o Local de Trabalho
+      Request.belongsTo(models.WorkLocation, {
+        foreignKey: 'workLocationId',
+        as: 'workLocation',
+      });
+
+      // Associação com o Cargo/Categoria
+      Request.belongsTo(models.Position, {
+        foreignKey: 'positionId',
+        as: 'position',
+      });
+
+      // Associação com o Colaborador (para desligamento, substituição, etc.)
+      Request.belongsTo(models.Employee, {
+        foreignKey: 'employeeId',
+        as: 'employee',
+      });
+
+      // Associação com o Usuário solicitante
+      Request.belongsTo(models.User, {
+        foreignKey: 'solicitantId',
+        as: 'solicitant',
+      });
+
+      // Associação com o Histórico de Status (uma solicitação tem muitos logs)
+      Request.hasMany(models.RequestStatusLog, {
+        foreignKey: 'requestId',
+        as: 'statusHistory',
+      });
     }
   }
+
   Request.init({
     id: {
       type: DataTypes.UUID,
@@ -30,26 +62,95 @@ module.exports = (sequelize, DataTypes) => {
     },
     protocol: {
       type: DataTypes.STRING,
+      allowNull: false,
       unique: true,
-      allowNull: false, // Protocol should always be set
     },
-    // O campo 'type' foi removido conforme a especificação.
-    // O tipo de solicitação será determinado pelo 'workflowId'.
     status: {
       type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: 'PENDENTE', // Este valor será sobrescrito pelo nome da primeira etapa do workflow
-      // Seus valores agora virão do 'name' das Steps
     },
-    // Dados do candidato para admissão
-    candidateName: DataTypes.STRING,
-    candidateCpf: DataTypes.STRING,
-    candidatePhone: DataTypes.STRING,
-    // Motivo/justificativa para a solicitação
-    reason: DataTypes.TEXT,
+    // Chaves estrangeiras
+    workflowId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'workflows',
+        key: 'id',
+      },
+    },
+    companyId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'companies',
+        key: 'id',
+      },
+    },
+    contractId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'contracts',
+        key: 'id',
+      },
+    },
+    workLocationId: {
+      type: DataTypes.UUID,
+      allowNull: true, // Pode ser nulo dependendo do tipo de solicitação
+      references: {
+        model: 'work_locations',
+        key: 'id',
+      },
+    },
+    positionId: {
+      type: DataTypes.UUID,
+      allowNull: true, // Pode ser nulo dependendo do tipo de solicitação
+      references: {
+        model: 'positions',
+        key: 'id',
+      },
+    },
+    employeeId: {
+      type: DataTypes.UUID,
+      allowNull: true, // Usado para desligamento/substituição/troca
+      references: {
+        model: 'employees',
+        key: 'id',
+      },
+    },
+    solicitantId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+    },
+    // Dados específicos do candidato (para Admissão/Substituição)
+    candidateName: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    candidateCpf: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    candidatePhone: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    // Campo genérico para justificativas
+    reason: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
   }, {
     sequelize,
     modelName: 'Request',
+    tableName: 'requests', // Especifica o nome da tabela
+    timestamps: true,
+    underscored: true,
   });
+
   return Request;
 };
