@@ -107,10 +107,12 @@ const getReportsStats = async (filters) => {
   });
   const workflowMap = workflows.reduce((acc, wf) => ({ ...acc, [wf.name]: wf.id }), {});
 
+  // --- MUDANÇA APLICADA AQUI ---
+  // As consultas agora verificam se o workflowMap.NOME existe. Se não existir, o resultado é 0.
   const [admissions, departures, replacements, totalEmployeesAtStart] = await Promise.all([
-    Request.count({ where: { ...whereClause, workflowId: workflowMap.ADMISSAO, status: 'ADMITIDO' } }),
-    Request.count({ where: { ...whereClause, workflowId: workflowMap.DESLIGAMENTO, status: 'DESLIGAMENTO_CONCLUIDO' } }),
-    Request.count({ where: { ...whereClause, workflowId: workflowMap.SUBSTITUICAO, status: 'ADMITIDO' } }),
+    workflowMap.ADMISSAO ? Request.count({ where: { ...whereClause, workflowId: workflowMap.ADMISSAO, status: 'ADMITIDO' } }) : 0,
+    workflowMap.DESLIGAMENTO ? Request.count({ where: { ...whereClause, workflowId: workflowMap.DESLIGAMENTO, status: 'DESLIGAMENTO_CONCLUIDO' } }) : 0,
+    workflowMap.SUBSTITUICAO ? Request.count({ where: { ...whereClause, workflowId: workflowMap.SUBSTITUICAO, status: 'ADMITIDO' } }) : 0,
     Employee.count({ where: { admissionDate: { [Op.lte]: startDate || new Date(0) } } }) // Turnover ainda é global
   ]);
 
@@ -166,6 +168,8 @@ const getHiringOverview = async (filters) => {
   }
 
   const admissionWorkflow = await Workflow.findOne({ where: { name: 'ADMISSAO' }, attributes: ['id'] });
+  // --- MUDANÇA APLICADA AQUI ---
+  // Verifica se o workflow de admissão foi encontrado antes de prosseguir
   if (!admissionWorkflow) {
     return [];
   }

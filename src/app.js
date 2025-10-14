@@ -79,7 +79,7 @@ const PORT = process.env.PORT || 3001;
 
 const startServer = async () => {
   try {
-    await db.sequelize.sync({ force: true }); 
+    await db.sequelize.sync({ force: false }); 
     console.log('Banco de dados sincronizado com sucesso (force: true).');
 
     console.log('Iniciando seeding de dados essenciais...');
