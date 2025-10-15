@@ -79,7 +79,7 @@ const PORT = process.env.PORT || 3001;
 
 const startServer = async () => {
   try {
-    await db.sequelize.sync({ force: false }); 
+    await db.sequelize.sync({ force: true }); 
     console.log('Banco de dados sincronizado com sucesso (force: true).');
 
     console.log('Iniciando seeding de dados essenciais...');
@@ -96,8 +96,7 @@ const startServer = async () => {
    //   await seedFromExcel({ transaction });
 
       // 4. Popula os FUNCIONÁRIOS (depende da estrutura acima)
-    //  await seedEmployees({ transaction }); // <-- 2. CHAME A NOVA FUNÇÃO AQUI
-
+    //  await seedEmployefforce
       await transaction.commit();
       console.log('✅ Seeding automático concluído com sucesso!');
     } catch (seedError) {
