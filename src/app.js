@@ -96,7 +96,7 @@ const startServer = async () => {
      await seedFromExcel({ transaction });
 
       // 4. Popula os FUNCIONÁRIOS (depende da estrutura acima)
-       await seedEmployees()
+       await seedEmployees({ transaction });
       await transaction.commit();
       console.log('✅ Seeding automático concluído com sucesso!');
     } catch (seedError) {
