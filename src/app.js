@@ -90,13 +90,13 @@ const startServer = async () => {
 
       // 2. Cria dados essenciais (admin, workflows)
       await createDefaultAdmin({ transaction });
- //     await createDefaultWorkflows({ transaction });
+     await createDefaultWorkflows({ transaction });
       
       // 3. Popula a ESTRUTURA (Clientes, Contratos, etc)
-   //   await seedFromExcel({ transaction });
+     await seedFromExcel({ transaction });
 
       // 4. Popula os FUNCIONÁRIOS (depende da estrutura acima)
-    //  await seedEmployefforce
+       await seedEmployefforce
       await transaction.commit();
       console.log('✅ Seeding automático concluído com sucesso!');
     } catch (seedError) {
