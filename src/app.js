@@ -86,7 +86,7 @@ const startServer = async () => {
     const transaction = await db.sequelize.transaction();
     try {
       // 1. Popula as permissões
-    //  await seedPermissions({ transaction });
+     await seedPermissions({ transaction });
 
       // 2. Cria dados essenciais (admin, workflows)
       await createDefaultAdmin({ transaction });
@@ -96,7 +96,7 @@ const startServer = async () => {
      await seedFromExcel({ transaction });
 
       // 4. Popula os FUNCIONÁRIOS (depende da estrutura acima)
-       await seedEmployefforce
+       await seedEmployees()
       await transaction.commit();
       console.log('✅ Seeding automático concluído com sucesso!');
     } catch (seedError) {
